@@ -16,8 +16,10 @@ class View3D(QWidget):
         self.config: Optional[RasterConfig] = None
         self.triangles: List[Triangle] = []
 
-        self.rot_x = 35.0
-        self.rot_y = -45.0
+        self.rot_x = 90.0
+        self.rot_y = 0.0
+        self.rot_z = 0.0
+        self.view_mode = "Top"
         self.zoom = 1.0
         self.pan_x = 0.0
         self.pan_y = 0.0
@@ -50,19 +52,26 @@ class View3D(QWidget):
 
     def _transform(self, x: float, y: float, z: float) -> Tuple[float, float, float]:
         nx, ny, nz = self._normalize(x, y, z)
+        return self._rotate_vector(nx, ny, nz)
 
+    def _rotate_vector(self, x: float, y: float, z: float) -> Tuple[float, float, float]:
         rad_x = math.radians(self.rot_x)
         rad_y = math.radians(self.rot_y)
+        rad_z = math.radians(self.rot_z)
 
-        x1 = nx * math.cos(rad_y) - nz * math.sin(rad_y)
-        z1 = nx * math.sin(rad_y) + nz * math.cos(rad_y)
-        y1 = ny
+        y1 = y * math.cos(rad_x) - z * math.sin(rad_x)
+        z1 = y * math.sin(rad_x) + z * math.cos(rad_x)
+        x1 = x
 
-        y2 = y1 * math.cos(rad_x) - z1 * math.sin(rad_x)
-        z2 = y1 * math.sin(rad_x) + z1 * math.cos(rad_x)
-        x2 = x1
+        x2 = x1 * math.cos(rad_y) + z1 * math.sin(rad_y)
+        z2 = -x1 * math.sin(rad_y) + z1 * math.cos(rad_y)
+        y2 = y1
 
-        return (x2, y2, z2)
+        x3 = x2 * math.cos(rad_z) - y2 * math.sin(rad_z)
+        y3 = x2 * math.sin(rad_z) + y2 * math.cos(rad_z)
+        z3 = z2
+
+        return (x3, y3, z3)
 
     def _project(self, x: float, y: float, z: float) -> Tuple[float, float]:
         x2, y2, _ = self._transform(x, y, z)
@@ -144,16 +153,7 @@ class View3D(QWidget):
         painter.drawEllipse(int(origin[0] - 3), int(origin[1] - 3), 6, 6)
 
     def _transform_axis(self, x: float, y: float, z: float, axis_len: float) -> Tuple[float, float]:
-        rad_x = math.radians(self.rot_x)
-        rad_y = math.radians(self.rot_y)
-
-        x1 = x * math.cos(rad_y) - z * math.sin(rad_y)
-        z1 = x * math.sin(rad_y) + z * math.cos(rad_y)
-        y1 = y
-
-        y2 = y1 * math.cos(rad_x) - z1 * math.sin(rad_x)
-        x2 = x1
-
+        x2, y2, _ = self._rotate_vector(x, y, z)
         return (x2 * axis_len, -y2 * axis_len)
 
     def _draw_grid(self, painter: QPainter):
@@ -208,21 +208,18 @@ class View3D(QWidget):
         mode = "Free drag" if self.free_rotate else "Fixed/buttons"
         painter.setPen(QPen(QColor(220, 220, 225)))
         painter.setFont(QFont("Arial", 9))
-        painter.drawText(10, 20, f"View: {self._view_name()} | Rot: ({self.rot_x:.0f}, {self.rot_y:.0f}) | Zoom: {self.zoom:.2f}")
-        painter.drawText(10, 36, f"Mode: {mode} | Wheel zoom, buttons rotate")
+        painter.drawText(10, 20, f"Mode: {self.view_mode} | Rot XYZ: ({self.rot_x:.0f}, {self.rot_y:.0f}, {self.rot_z:.0f}) | Zoom: {self.zoom:.2f}")
+        painter.drawText(10, 36, f"Input: {mode} | Default mode is Top, buttons rotate around X/Y/Z axes")
 
     def _view_name(self) -> str:
-        presets = {
-            (0, 0): "Front",
-            (0, 180): "Back",
-            (0, 90): "Left",
-            (0, -90): "Right",
-            (90, 0): "Top",
-            (-90, 0): "Bottom",
-            (35, -45): "ISO",
-        }
-        key = (round(self.rot_x), round(self.rot_y))
-        return presets.get(key, "Custom")
+        return self.view_mode
+
+    def _set_view(self, mode: str, rot_x: float, rot_y: float, rot_z: float = 0.0):
+        self.view_mode = mode
+        self.rot_x = rot_x
+        self.rot_y = rot_y
+        self.rot_z = rot_z
+        self.update()
 
     def mousePressEvent(self, event):
         if self.free_rotate and event.button() == Qt.MouseButton.LeftButton:
@@ -232,8 +229,8 @@ class View3D(QWidget):
         if self.free_rotate and self._last_pos and event.buttons() & Qt.MouseButton.LeftButton:
             dx = event.pos().x() - self._last_pos.x()
             dy = event.pos().y() - self._last_pos.y()
-            self.rotate_horizontal(dx * 0.5)
-            self.rotate_vertical(dy * 0.5)
+            self.rotate_y(dx * 0.5)
+            self.rotate_x(dy * 0.5)
             self._last_pos = event.pos()
 
     def mouseReleaseEvent(self, event):
@@ -286,45 +283,50 @@ class View3D(QWidget):
         self._last_pos = None
         self.update()
 
-    def rotate_horizontal(self, degrees: float):
+    def rotate_x(self, degrees: float):
+        self.view_mode = "Custom"
+        self.rot_x = ((self.rot_x + degrees + 180) % 360) - 180
+        self.update()
+
+    def rotate_y(self, degrees: float):
+        self.view_mode = "Custom"
         self.rot_y = ((self.rot_y + degrees + 180) % 360) - 180
         self.update()
 
-    def rotate_vertical(self, degrees: float):
-        self.rot_x = max(-90, min(90, self.rot_x + degrees))
+    def rotate_z(self, degrees: float):
+        self.view_mode = "Custom"
+        self.rot_z = ((self.rot_z + degrees + 180) % 360) - 180
         self.update()
+
+    def rotate_horizontal(self, degrees: float):
+        self.rotate_y(degrees)
+
+    def rotate_vertical(self, degrees: float):
+        self.rotate_x(degrees)
 
     def set_view_front(self):
-        self.rot_x = 0.0
-        self.rot_y = 0.0
-        self.update()
+        self._set_view("X-Y Front", 0.0, 0.0, 0.0)
 
     def set_view_back(self):
-        self.rot_x = 0.0
-        self.rot_y = 180.0
-        self.update()
+        self._set_view("X-Y Back", 0.0, 180.0, 0.0)
 
     def set_view_left(self):
-        self.rot_x = 0.0
-        self.rot_y = 90.0
-        self.update()
+        self._set_view("Y-Z Side", 0.0, 90.0, 0.0)
 
     def set_view_right(self):
-        self.rot_x = 0.0
-        self.rot_y = -90.0
-        self.update()
+        self._set_view("Y-Z Side", 0.0, -90.0, 0.0)
 
     def set_view_top(self):
-        self.rot_x = 90.0
-        self.rot_y = 0.0
-        self.update()
+        self._set_view("Top", 90.0, 0.0, 0.0)
 
     def set_view_bottom(self):
-        self.rot_x = -90.0
-        self.rot_y = 0.0
-        self.update()
+        self._set_view("Bottom", -90.0, 0.0, 0.0)
+
+    def set_view_xz_side(self):
+        self._set_view("X-Z Side", 0.0, 0.0, 0.0)
+
+    def set_view_yz_side(self):
+        self._set_view("Y-Z Side", 0.0, 90.0, 0.0)
 
     def set_view_perspective(self):
-        self.rot_x = 35.0
-        self.rot_y = -45.0
-        self.update()
+        self._set_view("Free 3D", 35.0, -45.0, 0.0)

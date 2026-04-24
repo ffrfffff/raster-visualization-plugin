@@ -27,7 +27,7 @@ python main.py
 ### 视图
 - **Top View**: 俯视图，显示 tile 网格、scissor/clip 区域、光栅化像素、顶点坐标
 - **Depth Side View**: 深度侧视图（X轴=屏幕坐标，Y轴=深度[-1,1]）
-- **3D View**: 正交工程视图，支持 Front/Back/Left/Right/Top/Bottom/ISO 固定视角、Yaw/Pitch 步进旋转和可选 Free Drag
+- **3D View**: Combined View，默认 Top 俯视角，支持 Top / X-Z / Y-Z / X-Y / Free 3D 模式和 X/Y/Z 轴旋转
 
 ### 坐标格式
 - X/Y: Q16.8 定点数（16位整数 + 8位小数）
@@ -69,6 +69,12 @@ python main.py
 ```
 
 ## 版本日志
+
+### v0.9.0 (2026-04-24)
+- 3D View 升级为 Combined View：默认进入 Top 俯视角，便于直接对齐 screen 平面
+- 新增 Top / X-Z / Y-Z / X-Y / Free 3D 模式按钮，可在 3D 视图内查看俯视、侧视和平面视角
+- 新增 X-15 / X+15 / Y-15 / Y+15 / Z-15 / Z+15 轴向旋转按钮，支持围绕 X/Y/Z 三轴步进旋转
+- 3D 视图的弹出窗口会继承当前 Combined View 模式、X/Y/Z 旋转角度、缩放和平移
 
 ### v0.8.0 (2026-04-24)
 - 3D View 坐标轴改为右下角独立方向指示器，不再覆盖 screen 平面中心

@@ -141,28 +141,28 @@ class MainWindow(QMainWindow):
 
         # 第二行：3D 视图模式 + 开关
         options_layout2 = QHBoxLayout()
-        options_layout2.addWidget(QLabel("3D View:"))
-        self.view3d_front_btn = QPushButton("Front")
-        self.view3d_back_btn = QPushButton("Back")
-        self.view3d_left_btn = QPushButton("Left")
-        self.view3d_right_btn = QPushButton("Right")
+        options_layout2.addWidget(QLabel("3D Combined:"))
         self.view3d_top_btn = QPushButton("Top")
-        self.view3d_bottom_btn = QPushButton("Bottom")
-        self.view3d_persp_btn = QPushButton("ISO")
-        for btn in [self.view3d_front_btn, self.view3d_back_btn, self.view3d_left_btn,
-                     self.view3d_right_btn, self.view3d_top_btn, self.view3d_bottom_btn,
-                     self.view3d_persp_btn]:
-            btn.setFixedWidth(52)
+        self.view3d_xz_btn = QPushButton("X-Z")
+        self.view3d_yz_btn = QPushButton("Y-Z")
+        self.view3d_front_btn = QPushButton("X-Y")
+        self.view3d_persp_btn = QPushButton("Free 3D")
+        for btn in [self.view3d_top_btn, self.view3d_xz_btn, self.view3d_yz_btn,
+                     self.view3d_front_btn, self.view3d_persp_btn]:
+            btn.setFixedWidth(58)
             options_layout2.addWidget(btn)
 
         options_layout2.addWidget(QLabel("| Rotate:"))
-        self.view3d_yaw_left_btn = QPushButton("Yaw -15")
-        self.view3d_yaw_right_btn = QPushButton("Yaw +15")
-        self.view3d_pitch_down_btn = QPushButton("Pitch -15")
-        self.view3d_pitch_up_btn = QPushButton("Pitch +15")
-        for btn in [self.view3d_yaw_left_btn, self.view3d_yaw_right_btn,
-                     self.view3d_pitch_down_btn, self.view3d_pitch_up_btn]:
-            btn.setFixedWidth(70)
+        self.view3d_x_neg_btn = QPushButton("X-15")
+        self.view3d_x_pos_btn = QPushButton("X+15")
+        self.view3d_y_neg_btn = QPushButton("Y-15")
+        self.view3d_y_pos_btn = QPushButton("Y+15")
+        self.view3d_z_neg_btn = QPushButton("Z-15")
+        self.view3d_z_pos_btn = QPushButton("Z+15")
+        for btn in [self.view3d_x_neg_btn, self.view3d_x_pos_btn,
+                     self.view3d_y_neg_btn, self.view3d_y_pos_btn,
+                     self.view3d_z_neg_btn, self.view3d_z_pos_btn]:
+            btn.setFixedWidth(52)
             options_layout2.addWidget(btn)
 
         options_layout2.addWidget(QLabel("|"))
@@ -302,16 +302,16 @@ class MainWindow(QMainWindow):
         self.show_axes3d_cb.toggled.connect(lambda v: setattr(self.view3d, 'show_axes', v) or self.view3d.update())
 
         self.view3d_front_btn.clicked.connect(self.view3d.set_view_front)
-        self.view3d_back_btn.clicked.connect(self.view3d.set_view_back)
-        self.view3d_left_btn.clicked.connect(self.view3d.set_view_left)
-        self.view3d_right_btn.clicked.connect(self.view3d.set_view_right)
         self.view3d_top_btn.clicked.connect(self.view3d.set_view_top)
-        self.view3d_bottom_btn.clicked.connect(self.view3d.set_view_bottom)
+        self.view3d_xz_btn.clicked.connect(self.view3d.set_view_xz_side)
+        self.view3d_yz_btn.clicked.connect(self.view3d.set_view_yz_side)
         self.view3d_persp_btn.clicked.connect(self.view3d.set_view_perspective)
-        self.view3d_yaw_left_btn.clicked.connect(lambda: self.view3d.rotate_horizontal(-15))
-        self.view3d_yaw_right_btn.clicked.connect(lambda: self.view3d.rotate_horizontal(15))
-        self.view3d_pitch_down_btn.clicked.connect(lambda: self.view3d.rotate_vertical(-15))
-        self.view3d_pitch_up_btn.clicked.connect(lambda: self.view3d.rotate_vertical(15))
+        self.view3d_x_neg_btn.clicked.connect(lambda: self.view3d.rotate_x(-15))
+        self.view3d_x_pos_btn.clicked.connect(lambda: self.view3d.rotate_x(15))
+        self.view3d_y_neg_btn.clicked.connect(lambda: self.view3d.rotate_y(-15))
+        self.view3d_y_pos_btn.clicked.connect(lambda: self.view3d.rotate_y(15))
+        self.view3d_z_neg_btn.clicked.connect(lambda: self.view3d.rotate_z(-15))
+        self.view3d_z_pos_btn.clicked.connect(lambda: self.view3d.rotate_z(15))
 
         self.zoom_in_btn.clicked.connect(self.raster_view.zoom_in)
         self.zoom_out_btn.clicked.connect(self.raster_view.zoom_out)
@@ -487,6 +487,8 @@ class MainWindow(QMainWindow):
             view.set_free_rotate(self.free_rotate3d_cb.isChecked())
             view.rot_x = self.view3d.rot_x
             view.rot_y = self.view3d.rot_y
+            view.rot_z = self.view3d.rot_z
+            view.view_mode = self.view3d.view_mode
             view.zoom = self.view3d.zoom
             view.set_pan_offset(*self.view3d.get_pan_offset())
             title = "3D View - Popout"
