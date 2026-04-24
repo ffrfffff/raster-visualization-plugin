@@ -628,10 +628,21 @@ class View3D(QWidget):
             )
 
     def wheelEvent(self, event):
+        mouse_pos = event.position()
+        center_x = self.width() / 2 + self.pan_x
+        center_y = self.height() / 2 + self.pan_y
+        rel_x = mouse_pos.x() - center_x
+        rel_y = mouse_pos.y() - center_y
+
         delta = event.angleDelta().y()
         factor = 1.1 if delta > 0 else 0.9
+        old_zoom = self.zoom
         self.zoom *= factor
         self.zoom = max(0.1, min(50.0, self.zoom))
+        actual_factor = self.zoom / old_zoom if old_zoom else 1.0
+
+        self.pan_x += rel_x * (1 - actual_factor)
+        self.pan_y += rel_y * (1 - actual_factor)
         self.update()
 
     def reset_view(self):
