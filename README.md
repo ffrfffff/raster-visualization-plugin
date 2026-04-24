@@ -9,40 +9,129 @@ pip install PyQt6 numpy
 python main.py
 ```
 
-## 功能
+## 功能说明
 
-### 配置参数图形化显示
-- MSAA (1x/2x/4x/8x/16x)，使用标准旋转网格（Rotated Grid）采样模式
-- Screen Size / Depth Surface Size / Render Target Size
-- Clip Region / Scissor Rect
-- Tile 大小
+### 配置参数面板
+- **MSAA**: 支持 1x / 2x / 4x / 8x / 16x，采样点使用标准旋转网格（Rotated Grid）模式。
+- **Screen Size**: 配置屏幕空间宽高，是 Top View / 3D View 中 screen 平面的基础范围。
+- **Depth Surface Size**: 配置 depth surface 宽高，可通过 `Depth Surf` 开关在 Top View / 3D View / Popout 中显示边界。
+- **Render Target Size**: 配置 render target 宽高，可通过 `RT Surf` 开关在 Top View / 3D View / Popout 中显示边界。
+- **Clip Region**: 配置裁剪区域 `(x, y, width, height)`，在视图中用黄色边框显示。
+- **Scissor Rect**: 配置 scissor 区域 `(x, y, width, height)`，在视图中用青色边框显示。
+- **Tile Size**: 配置 tile 宽高，并自动计算横纵 tile 数量。
 
-### 三角形光栅化
-- 多三角形绘制，不同颜色区分
-- 软件光栅化器（基于重心坐标插值）
-- 深度插值 (FP32)
-- MSAA Coverage Test per-sample，Coverage Mask 可视化
-- MSAA Resolve（深度测试 + 按覆盖率混合颜色）
+### 三角形管理与坐标编辑
+- 支持多个三角形同时绘制，每个三角形使用不同颜色区分。
+- 三角形列表展示每个三角形的三个顶点坐标。
+- 支持新增、删除、清空三角形。
+- 支持在 GUI 中手动编辑顶点坐标。
+- X/Y 坐标使用 Q16.8 定点格式（16 位整数 + 8 位小数）。
+- Z 坐标使用 FP32 浮点格式，深度范围显示为 `[-1, 1]`。
+- 顶点编辑支持 Decimal / Binary / Hexadecimal 三种格式切换。
+- 坐标显示会根据当前格式自动转换，便于对照硬件/协议中的定点或浮点表示。
 
-### 视图
-- **Top View**: 俯视图，显示 tile 网格、scissor/clip 区域、光栅化像素、顶点坐标
-- **Depth Side View**: 深度侧视图（X轴=屏幕坐标，Y轴=深度[-1,1]）
-- **3D View**: Combined View，默认 Top 俯视角，支持 Top / X-Z / Y-Z / X-Y / Free 3D 模式和 X/Y/Z 轴旋转
+### 软件光栅化器
+- 使用屏幕空间三角形进行软件光栅化。
+- 使用 edge function 判断像素或 sample 是否落入三角形。
+- 使用重心坐标进行深度插值。
+- 支持 per-pixel coverage ratio 统计。
+- 支持 per-sample coverage test 和 per-sample depth 记录。
+- 支持 coverage mask 输出和可视化。
+- 支持 MSAA resolve：根据 sample 覆盖率和深度结果混合颜色。
+- 状态栏显示三角形数量、光栅化像素数量和深度范围。
 
-### 坐标格式
-- X/Y: Q16.8 定点数（16位整数 + 8位小数）
-- Z: FP32 浮点数
-- 支持 Decimal / Binary / Hexadecimal 三种显示格式切换
-- 顶点编辑对话框，支持格式切换和手动输入
+### MSAA 可视化
+- 支持 1x / 2x / 4x / 8x / 16x MSAA 切换。
+- MSAA 采样点使用旋转网格分布，便于观察不同 MSAA 模式下 sample 位置差异。
+- 高缩放下，每个被覆盖 pixel 内会显示完整 sample pattern。
+- 被覆盖 sample 和未覆盖 sample 使用不同填充样式区分。
+- sample 点可显示编号，方便对照 coverage mask bit 位。
+- 右上角显示当前 MSAA sample pattern 预览框。
+- Coverage Mask 使用完整 `0b...` 二进制形式显示，并按当前 MSAA sample 数补齐位数。
+- MSAA > 1x 时，光栅化像素可显示 resolve 后的颜色结果。
 
-### 交互
-- 滚轮缩放（以鼠标位置为中心）
-- 方向按钮和滚动条平移 Top/Depth/3D 视图
-- Top View 支持输入 X/Y 坐标并定位到目标位置
-- 中键/Shift+左键拖拽平移
-- 鼠标悬停显示像素坐标和 tile 索引
-- Pop Top/Depth/3D 按钮弹出独立窗口
-- 多个显示开关：Tiles、Tile Idx、Tile Axes、Pixel Grid、Vtx Labels、Cov Mask、Scissor、Clip、Pixels、MSAA
+### Top View（俯视光栅视图）
+- 显示 screen 平面、tile 网格、三角形边框、顶点、光栅化像素和 MSAA sample 点。
+- 显示 Screen / Depth Surface / Render Target / Clip / Scissor 等不同边界。
+- 支持 tile index 显示，例如 `(tile_x, tile_y)`。
+- 支持 tile 边界上的像素坐标刻度。
+- 支持高缩放下显示 pixel grid 和 pixel 坐标。
+- 像素坐标会根据格子大小自动裁剪或简化，避免文字挤出 pixel。
+- 支持 Coverage Mask 显示，可查看每个边缘像素的 sample 覆盖情况。
+- 鼠标悬停显示当前 pixel 坐标和 tile 索引。
+- 支持输入 `Go Top X/Y`，把指定 screen 坐标定位到视图中心。
+
+### Depth Side View（深度侧视图）
+- 使用 X 轴表示 screen X 坐标。
+- 使用 Y 轴表示深度值，范围为 `[-1, 1]`。
+- 显示三角形顶点的深度位置和三角形深度剖面。
+- 显示光栅化像素对应的插值深度点。
+- 支持滚轮缩放和拖拽平移。
+- 支持右侧/下侧滚动条调节视图位置。
+- Popout 后仍支持独立缩放和平移。
+
+### 3D View（Combined Raster 3D View）
+- 3D View 是合并视图：在 3D screen 平面上叠加 Top View 的 raster debug 信息。
+- 默认进入 Top 俯视角，便于和 Top View 对齐观察。
+- 支持 Top / X-Z / Y-Z / X-Y / Free 3D 固定视角模式。
+- 支持 X-15 / X+15 / Y-15 / Y+15 / Z-15 / Z+15 轴向步进旋转。
+- 支持 Free Drag 开关，开启后可用鼠标自由旋转，默认关闭以避免误操作。
+- 支持正交投影，减少透视变形，便于对齐 screen 平面。
+- 支持右下角独立 X/Y/Z 坐标轴指示器，不遮挡 screen 内容。
+- 支持 screen 平面底板、tile 网格、tile index、tile 坐标轴、pixel grid、clip、scissor、Depth Surface、RT Surface、raster pixels、MSAA samples、coverage mask、sample pattern 预览。
+- 非正方形 screen 使用统一比例归一化，保证 3D View 中 pixel 不被拉伸。
+- 3D 像素坐标会按当前格子显示空间裁剪，放不下时自动隐藏，避免挤出格子。
+- 滚轮缩放以鼠标当前位置为锚点，和 Top View 一样保持鼠标下的内容位置稳定。
+- 支持右侧/下侧滚动条平移视图。
+
+### 显示开关
+- **Tiles**: 显示或隐藏 tile 网格。
+- **Tile Idx**: 显示或隐藏 tile 索引。
+- **Tile Axes**: 显示或隐藏 tile 边界像素坐标刻度。
+- **Pixel Grid**: 显示或隐藏 pixel grid 和 pixel 坐标。
+- **Vtx Labels**: 显示或隐藏顶点坐标标签。
+- **Cov Mask**: 显示或隐藏 MSAA coverage mask。
+- **Scissor**: 显示或隐藏 scissor rect。
+- **Clip**: 显示或隐藏 clip region。
+- **Depth Surf**: 显示或隐藏 depth surface size 边界。
+- **RT Surf**: 显示或隐藏 render target size 边界。
+- **Pixels**: 显示或隐藏光栅化像素/resolve 像素。
+- **MSAA**: 显示或隐藏 MSAA sample 点和 sample pattern 预览。
+- **3D Grid**: 显示或隐藏 3D View 的网格层。
+- **3D Axes**: 显示或隐藏 3D View 右下角坐标轴。
+- **Free Drag**: 控制 3D View 是否允许鼠标自由拖拽旋转。
+
+### 缩放、平移与定位
+- Top View 和 3D View 支持滚轮缩放，并以鼠标位置为缩放锚点。
+- Depth Side View 支持滚轮缩放。
+- Top View 支持中键拖拽或 `Shift + 左键` 拖拽平移。
+- Depth Side View 支持左键拖拽平移。
+- 主 GUI 的 Top/3D 区域右侧和下侧有滚动条，可直接调节当前主视图位置。
+- Depth Side View 右侧和下侧有独立滚动条，可调节深度视图位置。
+- 滚动条方向与图像移动方向一致，并降低了映射灵敏度，避免拖动过快。
+- `Fit` 可将 Top View 缩放到适合窗口大小。
+- `1:1` 可重置 Top View 缩放和平移。
+- `Go Top X/Y` 可输入 screen 坐标并定位到目标位置。
+
+### Popout 独立窗口
+- 支持 `Pop Top`、`Pop Depth`、`Pop 3D` 将三个视图弹出到独立窗口。
+- Popout 窗口带有自己的 toolbar，可执行 Zoom In、Zoom Out、Fit、1:1、方向平移和 Close。
+- Popout 窗口带有右侧/下侧滚动条，布局与主 GUI 保持一致。
+- 主 GUI 中修改配置、三角形数据或显示开关后，已弹出的 Popout 视图会同步更新。
+- 3D Popout 会继承主 3D View 的视角模式、X/Y/Z 旋转角度、缩放和平移状态。
+
+### 性能优化
+- Top View 的光栅化像素使用 QImage 缓存一次性绘制，避免每帧逐像素 drawRect。
+- 3D View 在 Top 模式下的 raster pixels 也使用 QImage 缓存绘制。
+- 高缩放下只绘制当前可见 screen 范围内的 pixel grid、坐标标签和 MSAA sample 点。
+- 非 Top 旋转视角限制高成本逐像素/MSAA 绘制数量，减少卡顿。
+- 低缩放时关闭部分抗锯齿以提升绘制性能。
+
+### 当前限制与后续方向
+- 当前三角形输入以 screen-space 顶点为主。
+- PB / 3D display list / prim instruction header / visibility config 解析还未接入。
+- 后续可扩展为从 PB 序列更新 depth buffer、depth test 和最终可见性结果。
+- 后续可增加保存/加载场景、导入导出三角形和更完整的硬件命令解析。
 
 ## 项目结构
 
@@ -69,6 +158,11 @@ python main.py
 ```
 
 ## 版本日志
+
+### v0.17.0 (2026-04-24)
+- README 功能说明扩展为完整使用文档，覆盖配置面板、三角形管理、软件光栅化、MSAA、Top/Depth/3D 视图、显示开关、交互、Popout 和性能优化
+- README 新增当前限制与后续方向，记录 PB / display list / depth buffer 等后续扩展目标
+- README 补充 Depth Surf / RT Surf、3D 像素比例修正、Popout 同步和滚动条导航等最新功能说明
 
 ### v0.16.0 (2026-04-24)
 - 新增 Depth Surf 和 RT Surf 两个独立显示开关，不再把 surface 显示合并为单一开关
