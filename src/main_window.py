@@ -19,6 +19,8 @@ from .renderers.software_rasterizer import SoftwareRasterizer
 class MainWindow(QMainWindow):
     """主窗口"""
 
+    SCROLL_PAN_SCALE = 0.25
+
     def __init__(self):
         super().__init__()
         self.setWindowTitle("Raster Visualization Plugin")
@@ -355,10 +357,11 @@ class MainWindow(QMainWindow):
         if not hasattr(view, 'get_pan_offset') or not hasattr(view, 'set_pan_offset'):
             return
         x, y = view.get_pan_offset()
+        offset = -value * self.SCROLL_PAN_SCALE
         if axis == 'x':
-            x = value
+            x = offset
         else:
-            y = value
+            y = offset
         view.set_pan_offset(x, y)
 
     def _sync_scroll_pair(self, h_scroll, v_scroll, view):
@@ -367,8 +370,8 @@ class MainWindow(QMainWindow):
         x, y = view.get_pan_offset()
         h_scroll.blockSignals(True)
         v_scroll.blockSignals(True)
-        h_scroll.setValue(max(h_scroll.minimum(), min(h_scroll.maximum(), int(x))))
-        v_scroll.setValue(max(v_scroll.minimum(), min(v_scroll.maximum(), int(y))))
+        h_scroll.setValue(max(h_scroll.minimum(), min(h_scroll.maximum(), int(-x / self.SCROLL_PAN_SCALE))))
+        v_scroll.setValue(max(v_scroll.minimum(), min(v_scroll.maximum(), int(-y / self.SCROLL_PAN_SCALE))))
         h_scroll.blockSignals(False)
         v_scroll.blockSignals(False)
 
