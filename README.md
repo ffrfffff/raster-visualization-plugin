@@ -70,6 +70,11 @@ python main.py
 
 ## 版本日志
 
+### v0.12.0 (2026-04-24)
+- 主视图和 Depth Side View 的位置调节改为贴在视图右侧/下侧的滚动条，不再使用 GUI 顶部的上下左右方向按钮
+- 切换到 3D View 时自动隐藏下方 Depth Side View，让 3D 视图占用完整主视图空间；切回 Top View 时恢复侧视图
+- Popout 独立窗口会跟随主 GUI 的配置、三角形数据和显示开关更新，主 GUI 修改后弹出视图同步刷新
+
 ### v0.11.0 (2026-04-24)
 - 优化 3D View 放大后的绘制性能：Top 模式 raster pixels 改用 QImage 缓存一次性绘制，避免每帧逐像素投影多边形
 - 3D View 的 pixel grid、pixel 坐标标签和 MSAA sample 点改为按当前可见 screen 范围裁剪绘制

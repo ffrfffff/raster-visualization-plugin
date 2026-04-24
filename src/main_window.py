@@ -2,7 +2,7 @@ from PyQt6.QtWidgets import (
     QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
     QSplitter, QMenuBar, QMenu, QToolBar, QStatusBar,
     QCheckBox, QLabel, QMessageBox, QTabWidget, QPushButton,
-    QSpinBox, QScrollBar
+    QSpinBox, QScrollBar, QGridLayout
 )
 from PyQt6.QtCore import Qt
 from .models.config import RasterConfigModel
@@ -32,6 +32,7 @@ class MainWindow(QMainWindow):
         self._connect_signals()
 
         self._popout_windows = []
+        self._popout_entries = []
 
         # 添加示例三角形
         self.triangle_model.add_triangle(Triangle(
@@ -62,10 +63,14 @@ class MainWindow(QMainWindow):
         # 左侧：配置面板
         self.config_panel = ConfigPanel(self.config_model)
 
-        # 中间：分割器
+        # 中间：主视图区域 + 右侧/下侧滚动条 + 下方深度侧视图
         splitter = QSplitter(Qt.Orientation.Vertical)
 
-        # 上方：Tab 切换俯视图和3D视图
+        self.main_view_container = QWidget()
+        main_view_grid = QGridLayout(self.main_view_container)
+        main_view_grid.setContentsMargins(0, 0, 0, 0)
+        main_view_grid.setSpacing(2)
+
         self.view_tabs = QTabWidget()
         self.raster_view = RasterView()
         self.raster_view.set_config(self.config_model.config)
@@ -73,13 +78,42 @@ class MainWindow(QMainWindow):
         self.view3d.set_config(self.config_model.config)
         self.view_tabs.addTab(self.raster_view, "Top View (Raster)")
         self.view_tabs.addTab(self.view3d, "3D View")
-        splitter.addWidget(self.view_tabs)
 
-        # 下方：深度侧视图
+        self.main_h_scroll = QScrollBar(Qt.Orientation.Horizontal)
+        self.main_h_scroll.setRange(-5000, 5000)
+        self.main_h_scroll.setValue(0)
+        self.main_v_scroll = QScrollBar(Qt.Orientation.Vertical)
+        self.main_v_scroll.setRange(-5000, 5000)
+        self.main_v_scroll.setValue(0)
+
+        main_view_grid.addWidget(self.view_tabs, 0, 0)
+        main_view_grid.addWidget(self.main_v_scroll, 0, 1)
+        main_view_grid.addWidget(self.main_h_scroll, 1, 0)
+        main_view_grid.setRowStretch(0, 1)
+        main_view_grid.setColumnStretch(0, 1)
+        splitter.addWidget(self.main_view_container)
+
+        self.depth_container = QWidget()
+        depth_grid = QGridLayout(self.depth_container)
+        depth_grid.setContentsMargins(0, 0, 0, 0)
+        depth_grid.setSpacing(2)
         self.depth_view = DepthSideView()
         self.depth_view.set_config(self.config_model.config)
-        splitter.addWidget(self.depth_view)
+        self.depth_h_scroll = QScrollBar(Qt.Orientation.Horizontal)
+        self.depth_h_scroll.setRange(-5000, 5000)
+        self.depth_h_scroll.setValue(0)
+        self.depth_v_scroll = QScrollBar(Qt.Orientation.Vertical)
+        self.depth_v_scroll.setRange(-5000, 5000)
+        self.depth_v_scroll.setValue(0)
+        depth_grid.addWidget(self.depth_view, 0, 0)
+        depth_grid.addWidget(self.depth_v_scroll, 0, 1)
+        depth_grid.addWidget(self.depth_h_scroll, 1, 0)
+        depth_grid.setRowStretch(0, 1)
+        depth_grid.setColumnStretch(0, 1)
+        splitter.addWidget(self.depth_container)
         splitter.setSizes([550, 250])
+        self._splitter = splitter
+        self._depth_splitter_size = 250
 
         # 右侧布局
         right_layout = QVBoxLayout()
@@ -177,7 +211,7 @@ class MainWindow(QMainWindow):
         options_layout2.addWidget(self.show_axes3d_cb)
         options_layout2.addStretch()
 
-        # 第三行：定位 + 平移按钮
+        # 第三行：Top View 坐标定位
         options_layout3 = QHBoxLayout()
         options_layout3.addWidget(QLabel("Go Top X:"))
         self.goto_x_spin = QSpinBox()
@@ -194,55 +228,12 @@ class MainWindow(QMainWindow):
         options_layout3.addWidget(QLabel("Y:"))
         options_layout3.addWidget(self.goto_y_spin)
         options_layout3.addWidget(self.goto_btn)
-
-        options_layout3.addWidget(QLabel("| Top/3D Pan:"))
-        self.main_pan_left_btn = QPushButton("←")
-        self.main_pan_up_btn = QPushButton("↑")
-        self.main_pan_down_btn = QPushButton("↓")
-        self.main_pan_right_btn = QPushButton("→")
-        for btn in [self.main_pan_left_btn, self.main_pan_up_btn,
-                     self.main_pan_down_btn, self.main_pan_right_btn]:
-            btn.setFixedWidth(28)
-            options_layout3.addWidget(btn)
-
-        options_layout3.addWidget(QLabel("| Depth Pan:"))
-        self.depth_pan_left_btn = QPushButton("←")
-        self.depth_pan_up_btn = QPushButton("↑")
-        self.depth_pan_down_btn = QPushButton("↓")
-        self.depth_pan_right_btn = QPushButton("→")
-        for btn in [self.depth_pan_left_btn, self.depth_pan_up_btn,
-                     self.depth_pan_down_btn, self.depth_pan_right_btn]:
-            btn.setFixedWidth(28)
-            options_layout3.addWidget(btn)
+        options_layout3.addWidget(QLabel("| Use the right and bottom scrollbars on each view to pan"))
         options_layout3.addStretch()
-
-        # 第四行：滚动条导航
-        scroll_layout = QHBoxLayout()
-        scroll_layout.addWidget(QLabel("Top/3D H:"))
-        self.main_h_scroll = QScrollBar(Qt.Orientation.Horizontal)
-        self.main_h_scroll.setRange(-5000, 5000)
-        self.main_h_scroll.setValue(0)
-        scroll_layout.addWidget(self.main_h_scroll, stretch=1)
-        scroll_layout.addWidget(QLabel("V:"))
-        self.main_v_scroll = QScrollBar(Qt.Orientation.Horizontal)
-        self.main_v_scroll.setRange(-5000, 5000)
-        self.main_v_scroll.setValue(0)
-        scroll_layout.addWidget(self.main_v_scroll, stretch=1)
-        scroll_layout.addWidget(QLabel("Depth H:"))
-        self.depth_h_scroll = QScrollBar(Qt.Orientation.Horizontal)
-        self.depth_h_scroll.setRange(-5000, 5000)
-        self.depth_h_scroll.setValue(0)
-        scroll_layout.addWidget(self.depth_h_scroll, stretch=1)
-        scroll_layout.addWidget(QLabel("V:"))
-        self.depth_v_scroll = QScrollBar(Qt.Orientation.Horizontal)
-        self.depth_v_scroll.setRange(-5000, 5000)
-        self.depth_v_scroll.setValue(0)
-        scroll_layout.addWidget(self.depth_v_scroll, stretch=1)
 
         right_layout.addLayout(options_layout)
         right_layout.addLayout(options_layout2)
         right_layout.addLayout(options_layout3)
-        right_layout.addLayout(scroll_layout)
 
         # 三角形列表
         self.triangle_panel = TriangleListPanel()
@@ -297,9 +288,9 @@ class MainWindow(QMainWindow):
         self.show_clip_cb.toggled.connect(lambda checked: self._toggle_raster_layer('clip', checked))
         self.show_pixels_cb.toggled.connect(lambda checked: self._toggle_raster_layer('raster_pixels', checked))
         self.show_msaa_cb.toggled.connect(lambda checked: self._toggle_raster_layer('msaa_samples', checked))
-        self.free_rotate3d_cb.toggled.connect(self.view3d.set_free_rotate)
-        self.show_grid3d_cb.toggled.connect(lambda v: setattr(self.view3d, 'show_grid', v) or self.view3d.update())
-        self.show_axes3d_cb.toggled.connect(lambda v: setattr(self.view3d, 'show_axes', v) or self.view3d.update())
+        self.free_rotate3d_cb.toggled.connect(lambda checked: self.view3d.set_free_rotate(checked) or self._sync_popout_views())
+        self.show_grid3d_cb.toggled.connect(lambda v: setattr(self.view3d, 'show_grid', v) or self.view3d.update() or self._sync_popout_views())
+        self.show_axes3d_cb.toggled.connect(lambda v: setattr(self.view3d, 'show_axes', v) or self.view3d.update() or self._sync_popout_views())
 
         self.view3d_front_btn.clicked.connect(self.view3d.set_view_front)
         self.view3d_top_btn.clicked.connect(self.view3d.set_view_top)
@@ -319,19 +310,11 @@ class MainWindow(QMainWindow):
         self.zoom_reset_btn.clicked.connect(self.raster_view.reset_view)
 
         self.goto_btn.clicked.connect(self._goto_top_position)
-        self.main_pan_left_btn.clicked.connect(lambda: self._pan_active_main_view('left'))
-        self.main_pan_up_btn.clicked.connect(lambda: self._pan_active_main_view('up'))
-        self.main_pan_down_btn.clicked.connect(lambda: self._pan_active_main_view('down'))
-        self.main_pan_right_btn.clicked.connect(lambda: self._pan_active_main_view('right'))
-        self.depth_pan_left_btn.clicked.connect(lambda: self._pan_view(self.depth_view, 'left'))
-        self.depth_pan_up_btn.clicked.connect(lambda: self._pan_view(self.depth_view, 'up'))
-        self.depth_pan_down_btn.clicked.connect(lambda: self._pan_view(self.depth_view, 'down'))
-        self.depth_pan_right_btn.clicked.connect(lambda: self._pan_view(self.depth_view, 'right'))
         self.main_h_scroll.valueChanged.connect(lambda value: self._set_active_main_scroll('x', value))
         self.main_v_scroll.valueChanged.connect(lambda value: self._set_active_main_scroll('y', value))
         self.depth_h_scroll.valueChanged.connect(lambda value: self._set_view_scroll(self.depth_view, 'x', value))
         self.depth_v_scroll.valueChanged.connect(lambda value: self._set_view_scroll(self.depth_view, 'y', value))
-        self.view_tabs.currentChanged.connect(lambda _: self._sync_main_scroll_from_active_view())
+        self.view_tabs.currentChanged.connect(self._on_view_tab_changed)
 
         self.popout_top_btn.clicked.connect(lambda: self._popout_view('top'))
         self.popout_depth_btn.clicked.connect(lambda: self._popout_view('depth'))
@@ -343,6 +326,7 @@ class MainWindow(QMainWindow):
             method = getattr(view, toggle_name, None)
             if method:
                 method(checked)
+        self._sync_popout_views()
 
     def _active_main_view(self):
         return self.view3d if self.view_tabs.currentWidget() is self.view3d else self.raster_view
@@ -394,6 +378,20 @@ class MainWindow(QMainWindow):
     def _sync_depth_scroll_from_view(self):
         self._sync_scroll_pair(self.depth_h_scroll, self.depth_v_scroll, self.depth_view)
 
+    def _on_view_tab_changed(self, index=None):
+        is_3d = self.view_tabs.currentWidget() is self.view3d
+        if is_3d and self.depth_container.isVisible():
+            sizes = self._splitter.sizes()
+            if len(sizes) > 1 and sizes[1] > 0:
+                self._depth_splitter_size = sizes[1]
+            self.depth_container.hide()
+        elif not is_3d and not self.depth_container.isVisible():
+            self.depth_container.show()
+            total = max(1, sum(self._splitter.sizes()))
+            depth_size = max(160, self._depth_splitter_size)
+            self._splitter.setSizes([max(300, total - depth_size), depth_size])
+        self._sync_main_scroll_from_active_view()
+
     def _on_config_changed(self):
         self.rasterizer.update_config(self.config_model.config)
         self.raster_view.set_config(self.config_model.config)
@@ -419,6 +417,7 @@ class MainWindow(QMainWindow):
         self.raster_view.set_triangles(triangles)
         self.view3d.set_triangles(triangles, results)
         self.depth_view.set_triangles(triangles, results)
+        self._sync_popout_views()
 
         total_pixels = sum(len(r.covered_pixels) for r in results)
         depth_ranges = [t.depth_range for t in triangles]
@@ -465,22 +464,53 @@ class MainWindow(QMainWindow):
     def _reset_3d_view(self):
         self.view3d.reset_view()
 
+    def _copy_raster_toggles_to_view(self, view):
+        for attr, checkbox in [
+            ('show_tiles', self.show_tiles_cb),
+            ('show_scissor', self.show_scissor_cb),
+            ('show_clip', self.show_clip_cb),
+            ('show_raster_pixels', self.show_pixels_cb),
+            ('show_msaa_samples', self.show_msaa_cb),
+            ('show_tile_labels', self.show_tile_labels_cb),
+            ('show_pixel_coords', self.show_pixel_coords_cb),
+            ('show_tile_pixel_axes', self.show_tile_axes_cb),
+            ('show_vertex_labels', self.show_vertex_labels_cb),
+            ('show_coverage_mask', self.show_coverage_mask_cb),
+        ]:
+            if hasattr(view, attr):
+                setattr(view, attr, checkbox.isChecked())
+        view.update()
+
+    def _sync_popout_views(self):
+        triangles = self.triangle_model.triangles
+        results = self.rasterizer.rasterize_triangles(triangles)
+        live_entries = []
+        for window, view_type in self._popout_entries:
+            if window not in self._popout_windows:
+                continue
+            view = window.view
+            view.set_config(self.config_model.config)
+            if view_type == 'top':
+                view.set_triangles(triangles)
+                self._copy_raster_toggles_to_view(view)
+            elif view_type == 'depth':
+                view.set_triangles(triangles, results)
+            elif view_type == '3d':
+                view.set_triangles(triangles, results)
+                self._copy_raster_toggles_to_view(view)
+                view.show_grid = self.show_grid3d_cb.isChecked()
+                view.show_axes = self.show_axes3d_cb.isChecked()
+                view.set_free_rotate(self.free_rotate3d_cb.isChecked())
+            live_entries.append((window, view_type))
+        self._popout_entries = live_entries
+
     def _popout_view(self, view_type: str):
         """弹出视图到独立窗口"""
         if view_type == 'top':
             view = RasterView()
             view.set_config(self.config_model.config)
             view.set_triangles(self.triangle_model.triangles)
-            view.show_tiles = self.show_tiles_cb.isChecked()
-            view.show_scissor = self.show_scissor_cb.isChecked()
-            view.show_clip = self.show_clip_cb.isChecked()
-            view.show_raster_pixels = self.show_pixels_cb.isChecked()
-            view.show_msaa_samples = self.show_msaa_cb.isChecked()
-            view.show_tile_labels = self.show_tile_labels_cb.isChecked()
-            view.show_pixel_coords = self.show_pixel_coords_cb.isChecked()
-            view.show_tile_pixel_axes = self.show_tile_axes_cb.isChecked()
-            view.show_vertex_labels = self.show_vertex_labels_cb.isChecked()
-            view.show_coverage_mask = self.show_coverage_mask_cb.isChecked()
+            self._copy_raster_toggles_to_view(view)
             title = "Top View (Raster) - Popout"
         elif view_type == 'depth':
             view = DepthSideView()
@@ -495,16 +525,7 @@ class MainWindow(QMainWindow):
             view.set_triangles(self.triangle_model.triangles, results)
             view.show_grid = self.show_grid3d_cb.isChecked()
             view.show_axes = self.show_axes3d_cb.isChecked()
-            view.show_tiles = self.show_tiles_cb.isChecked()
-            view.show_scissor = self.show_scissor_cb.isChecked()
-            view.show_clip = self.show_clip_cb.isChecked()
-            view.show_raster_pixels = self.show_pixels_cb.isChecked()
-            view.show_msaa_samples = self.show_msaa_cb.isChecked()
-            view.show_tile_labels = self.show_tile_labels_cb.isChecked()
-            view.show_pixel_coords = self.show_pixel_coords_cb.isChecked()
-            view.show_tile_pixel_axes = self.show_tile_axes_cb.isChecked()
-            view.show_vertex_labels = self.show_vertex_labels_cb.isChecked()
-            view.show_coverage_mask = self.show_coverage_mask_cb.isChecked()
+            self._copy_raster_toggles_to_view(view)
             view.set_free_rotate(self.free_rotate3d_cb.isChecked())
             view.rot_x = self.view3d.rot_x
             view.rot_y = self.view3d.rot_y
@@ -519,7 +540,13 @@ class MainWindow(QMainWindow):
         window = PopoutWindow(view, title, self)
         window.show()
         self._popout_windows.append(window)
-        window.destroyed.connect(lambda: self._popout_windows.remove(window) if window in self._popout_windows else None)
+        self._popout_entries.append((window, view_type))
+        window.destroyed.connect(lambda: self._on_popout_destroyed(window))
+
+    def _on_popout_destroyed(self, window):
+        if window in self._popout_windows:
+            self._popout_windows.remove(window)
+        self._popout_entries = [(w, t) for w, t in self._popout_entries if w is not window]
 
     def _show_about(self):
         QMessageBox.about(
