@@ -1,11 +1,13 @@
 """3D 可旋转视图"""
 import math
-from PyQt6.QtWidgets import QWidget
+from PyQt6.QtWidgets import QWidget, QToolTip
 from PyQt6.QtCore import Qt, QPointF
-from PyQt6.QtGui import QPainter, QPen, QColor, QBrush, QFont, QPolygonF
-from typing import List, Optional, Tuple
+from PyQt6.QtGui import QPainter, QPen, QColor, QBrush, QFont, QPolygonF, QFontMetrics
+from typing import Dict, List, Optional, Tuple
 from ..models.config import RasterConfig
-from ..models.triangle import Triangle
+from ..models.triangle import Triangle, RasterizedTriangle
+from ..renderers.software_rasterizer import SoftwareRasterizer
+from ..utils.geometry import generate_msaa_sample_positions
 
 
 class View3D(QWidget):
@@ -15,8 +17,10 @@ class View3D(QWidget):
         super().__init__()
         self.config: Optional[RasterConfig] = None
         self.triangles: List[Triangle] = []
+        self.rasterized_results: List[RasterizedTriangle] = []
+        self.rasterizer: Optional[SoftwareRasterizer] = None
 
-        self.rot_x = 90.0
+        self.rot_x = 0.0
         self.rot_y = 0.0
         self.rot_z = 0.0
         self.view_mode = "Top"
@@ -29,16 +33,32 @@ class View3D(QWidget):
 
         self.show_axes = True
         self.show_grid = True
+        self.show_tiles = True
+        self.show_scissor = True
+        self.show_clip = True
+        self.show_raster_pixels = True
+        self.show_msaa_samples = False
+        self.show_tile_labels = True
+        self.show_pixel_coords = True
+        self.show_tile_pixel_axes = True
+        self.show_vertex_labels = True
+        self.show_coverage_mask = True
 
         self.setMinimumSize(300, 200)
         self.setMouseTracking(True)
 
     def set_config(self, config: RasterConfig):
         self.config = config
+        self.rasterizer = SoftwareRasterizer(config)
         self.update()
 
-    def set_triangles(self, triangles: List[Triangle]):
+    def set_triangles(self, triangles: List[Triangle], rasterized: Optional[List[RasterizedTriangle]] = None):
         self.triangles = triangles
+        self.rasterized_results = rasterized or []
+        self.update()
+
+    def set_rasterized_results(self, rasterized: List[RasterizedTriangle]):
+        self.rasterized_results = rasterized
         self.update()
 
     def _normalize(self, x: float, y: float, z: float) -> Tuple[float, float, float]:
@@ -80,6 +100,53 @@ class View3D(QWidget):
         cy = self.height() / 2 + self.pan_y
         return (cx + x2 * scale, cy - y2 * scale)
 
+    def _projected_polygon(self, points: List[Tuple[float, float, float]]) -> QPolygonF:
+        polygon = QPolygonF()
+        for x, y, z in points:
+            sx, sy = self._project(x, y, z)
+            polygon.append(QPointF(sx, sy))
+        return polygon
+
+    def _draw_projected_line(self, painter: QPainter, p0: Tuple[float, float, float], p1: Tuple[float, float, float]):
+        x0, y0 = self._project(*p0)
+        x1, y1 = self._project(*p1)
+        painter.drawLine(int(x0), int(y0), int(x1), int(y1))
+
+    def _draw_projected_rect(self, painter: QPainter, x: float, y: float, w: float, h: float, z: float = 0.0):
+        polygon = self._projected_polygon([
+            (x, y, z),
+            (x + w, y, z),
+            (x + w, y + h, z),
+            (x, y + h, z),
+        ])
+        painter.drawPolygon(polygon)
+
+    def _projected_pixel_size(self) -> float:
+        if not self.config:
+            return 1.0
+        p00 = self._project(0, 0, 0)
+        p10 = self._project(1, 0, 0)
+        p01 = self._project(0, 1, 0)
+        dx = math.hypot(p10[0] - p00[0], p10[1] - p00[1])
+        dy = math.hypot(p01[0] - p00[0], p01[1] - p00[1])
+        return max(0.1, (dx + dy) * 0.5)
+
+    def _screen_point_from_view(self, vx: float, vy: float) -> Optional[Tuple[float, float]]:
+        if not self.config:
+            return None
+        if any(abs(v) > 0.001 for v in (self.rot_x, self.rot_y, self.rot_z)):
+            return None
+        scale = min(self.width(), self.height()) * 0.36 * self.zoom
+        if scale == 0:
+            return None
+        cx = self.width() / 2 + self.pan_x
+        cy = self.height() / 2 + self.pan_y
+        nx = (vx - cx) / scale
+        ny = (cy - vy) / scale
+        sx = (nx + 1) * self.config.screen_width / 2
+        sy = (1 - ny) * self.config.screen_height / 2
+        return (sx, sy)
+
     def paintEvent(self, event):
         painter = QPainter(self)
         painter.setRenderHint(QPainter.RenderHint.Antialiasing)
@@ -91,11 +158,26 @@ class View3D(QWidget):
 
         self._draw_background_panel(painter)
 
-        if self.show_grid:
-            self._draw_grid(painter)
+        if self.show_raster_pixels:
+            self._draw_raster_pixels(painter)
 
-        if self.show_axes:
-            self._draw_axes(painter)
+        if self.show_grid or self.show_tiles:
+            self._draw_tile_grid(painter)
+
+        if self.show_pixel_coords:
+            self._draw_pixel_grid_and_labels(painter)
+
+        if self.show_tile_labels:
+            self._draw_tile_labels(painter)
+
+        if self.show_tile_pixel_axes:
+            self._draw_tile_pixel_axes(painter)
+
+        if self.show_clip:
+            self._draw_clip_region(painter)
+
+        if self.show_scissor:
+            self._draw_scissor(painter)
 
         ordered = sorted(
             enumerate(self.triangles),
@@ -104,25 +186,248 @@ class View3D(QWidget):
         for index, triangle in ordered:
             self._draw_triangle(painter, triangle, index)
 
+        if self.show_msaa_samples:
+            self._draw_msaa_samples(painter)
+
+        self._draw_screen_border(painter)
+
+        if self.show_axes:
+            self._draw_axes(painter)
+
         self._draw_overlay(painter)
 
     def _draw_background_panel(self, painter: QPainter):
         sw = self.config.screen_width
         sh = self.config.screen_height
-        corners = [
-            self._project(0, 0, 0),
-            self._project(sw, 0, 0),
-            self._project(sw, sh, 0),
-            self._project(0, sh, 0),
-        ]
+        polygon = self._projected_polygon([
+            (0, 0, 0),
+            (sw, 0, 0),
+            (sw, sh, 0),
+            (0, sh, 0),
+        ])
 
-        polygon = QPolygonF()
-        for sx, sy in corners:
-            polygon.append(QPointF(sx, sy))
-
-        painter.setBrush(QBrush(QColor(55, 60, 76, 70)))
+        painter.setBrush(QBrush(QColor(55, 60, 76, 95)))
         painter.setPen(QPen(QColor(95, 105, 130), 1))
         painter.drawPolygon(polygon)
+
+    def _draw_raster_pixels(self, painter: QPainter):
+        if not self.rasterized_results:
+            return
+
+        total_pixels = sum(len(result.covered_pixels) for result in self.rasterized_results)
+        step = max(1, total_pixels // 35000)
+        counter = 0
+
+        if self.config.msaa > 1 and self.rasterizer:
+            resolved = self.rasterizer.resolve_msaa(self.rasterized_results)
+            for (px, py), (r, g, b) in resolved.items():
+                counter += 1
+                if counter % step != 0:
+                    continue
+                painter.setBrush(QBrush(QColor(r, g, b, 205)))
+                painter.setPen(Qt.PenStyle.NoPen)
+                self._draw_projected_rect(painter, px, py, 1, 1, 0)
+            return
+
+        for result in self.rasterized_results:
+            color = result.triangle.color
+            for (px, py), ratio in result.coverage_ratio.items():
+                counter += 1
+                if counter % step != 0:
+                    continue
+                painter.setBrush(QBrush(QColor(color[0], color[1], color[2], int(210 * ratio))))
+                painter.setPen(Qt.PenStyle.NoPen)
+                self._draw_projected_rect(painter, px, py, 1, 1, 0)
+
+    def _draw_tile_grid(self, painter: QPainter):
+        sw = self.config.screen_width
+        sh = self.config.screen_height
+        tw = self.config.tile_width
+        th = self.config.tile_height
+
+        painter.setPen(QPen(QColor(75, 82, 105), 1))
+        for i in range(self.config.tile_count_x + 1):
+            x = min(i * tw, sw)
+            self._draw_projected_line(painter, (x, 0, 0), (x, sh, 0))
+        for j in range(self.config.tile_count_y + 1):
+            y = min(j * th, sh)
+            self._draw_projected_line(painter, (0, y, 0), (sw, y, 0))
+
+    def _draw_tile_labels(self, painter: QPainter):
+        pixel_size = self._projected_pixel_size()
+        if pixel_size * min(self.config.tile_width, self.config.tile_height) < 12:
+            return
+
+        tw = self.config.tile_width
+        th = self.config.tile_height
+        painter.setFont(QFont("Consolas", max(7, min(10, int(pixel_size * 2)))))
+        painter.setPen(QPen(QColor(135, 140, 165)))
+        fm = QFontMetrics(painter.font())
+
+        for i in range(self.config.tile_count_x):
+            for j in range(self.config.tile_count_y):
+                sx, sy = self._project(i * tw + tw / 2, j * th + th / 2, 0)
+                label = f"({i},{j})"
+                painter.drawText(int(sx - fm.horizontalAdvance(label) / 2), int(sy + fm.height() / 3), label)
+
+    def _draw_tile_pixel_axes(self, painter: QPainter):
+        pixel_size = self._projected_pixel_size()
+        if pixel_size * min(self.config.tile_width, self.config.tile_height) < 10:
+            return
+
+        sw = self.config.screen_width
+        sh = self.config.screen_height
+        tw = self.config.tile_width
+        th = self.config.tile_height
+        painter.setFont(QFont("Consolas", 8))
+        painter.setPen(QPen(QColor(150, 155, 180)))
+
+        for i in range(self.config.tile_count_x + 1):
+            x = min(i * tw, sw)
+            sx, sy = self._project(x, 0, 0)
+            painter.drawText(int(sx - 10), int(sy - 5), str(x))
+        for j in range(self.config.tile_count_y + 1):
+            y = min(j * th, sh)
+            sx, sy = self._project(0, y, 0)
+            painter.drawText(int(sx - 32), int(sy + 4), str(y))
+
+    def _draw_pixel_grid_and_labels(self, painter: QPainter):
+        pixel_size = self._projected_pixel_size()
+        if pixel_size < 4.0:
+            return
+
+        sw = self.config.screen_width
+        sh = self.config.screen_height
+        painter.setPen(QPen(QColor(48, 52, 65), 1))
+        for px in range(sw + 1):
+            self._draw_projected_line(painter, (px, 0, 0), (px, sh, 0))
+        for py in range(sh + 1):
+            self._draw_projected_line(painter, (0, py, 0), (sw, py, 0))
+
+        if pixel_size < 10.0 or not self.rasterized_results:
+            return
+
+        painter.setFont(QFont("Consolas", max(6, min(9, int(pixel_size / 2)))))
+        painter.setPen(QPen(QColor(115, 120, 145)))
+        fm = QFontMetrics(painter.font())
+        drawn = 0
+        for result in self.rasterized_results:
+            for px, py in result.covered_pixels:
+                if drawn >= 1800:
+                    return
+                label = f"{px},{py}"
+                sx, sy = self._project(px + 0.5, py + 0.5, 0)
+                painter.drawText(int(sx - fm.horizontalAdvance(label) / 2), int(sy + fm.height() / 3), label)
+                drawn += 1
+
+    def _draw_clip_region(self, painter: QPainter):
+        cx, cy, cw, ch = self.config.clip_region
+        painter.setBrush(Qt.BrushStyle.NoBrush)
+        painter.setPen(QPen(QColor(255, 200, 0), 2))
+        self._draw_projected_rect(painter, cx, cy, cw, ch, 0.01)
+        sx, sy = self._project(cx, cy, 0.01)
+        painter.setFont(QFont("Arial", 8))
+        painter.setPen(QPen(QColor(255, 220, 60)))
+        painter.drawText(int(sx + 4), int(sy - 4), f"Clip({cx},{cy},{cw},{ch})")
+
+    def _draw_scissor(self, painter: QPainter):
+        sx0, sy0, sw, sh = self.config.scissor
+        painter.setBrush(Qt.BrushStyle.NoBrush)
+        painter.setPen(QPen(QColor(0, 255, 200), 2))
+        self._draw_projected_rect(painter, sx0, sy0, sw, sh, 0.015)
+        sx, sy = self._project(sx0, sy0, 0.015)
+        painter.setFont(QFont("Arial", 8))
+        painter.setPen(QPen(QColor(70, 255, 220)))
+        painter.drawText(int(sx + 4), int(sy + 12), f"Scissor({sx0},{sy0},{sw},{sh})")
+
+    def _draw_triangle(self, painter: QPainter, triangle: Triangle, index: int):
+        color = QColor(triangle.color[0], triangle.color[1], triangle.color[2])
+        points = [self._project(v[0], v[1], v[2]) for v in triangle.vertices]
+
+        polygon = QPolygonF()
+        for sx, sy in points:
+            polygon.append(QPointF(sx, sy))
+
+        painter.setBrush(QBrush(QColor(color.red(), color.green(), color.blue(), 75)))
+        painter.setPen(QPen(color.lighter(125), 2))
+        painter.drawPolygon(polygon)
+
+        for v in triangle.vertices:
+            base = self._project(v[0], v[1], 0)
+            tip = self._project(v[0], v[1], v[2])
+            painter.setPen(QPen(QColor(180, 185, 205, 90), 1, Qt.PenStyle.DashLine))
+            painter.drawLine(int(base[0]), int(base[1]), int(tip[0]), int(tip[1]))
+
+        painter.setBrush(QBrush(color.lighter(125)))
+        painter.setPen(QPen(QColor(245, 245, 245), 1))
+        painter.setFont(QFont("Consolas", 8))
+        for k, v in enumerate(triangle.vertices):
+            sx, sy = self._project(v[0], v[1], v[2])
+            painter.drawEllipse(int(sx - 5), int(sy - 5), 10, 10)
+            if self.show_vertex_labels:
+                painter.setPen(QPen(color.lighter(140)))
+                painter.drawText(int(sx + 8), int(sy - 8), f"V{k}({v[0]:.0f},{v[1]:.0f},z={v[2]:.2f})")
+                painter.setPen(QPen(QColor(245, 245, 245), 1))
+
+        avg_sx = sum(p[0] for p in points) / 3
+        avg_sy = sum(p[1] for p in points) / 3
+        painter.setFont(QFont("Arial", 11, QFont.Weight.Bold))
+        painter.setPen(QPen(color.lighter(140)))
+        painter.drawText(int(avg_sx + 12), int(avg_sy - 12), f"T{index}")
+
+    def _draw_msaa_samples(self, painter: QPainter):
+        if not self.rasterized_results or not self.config:
+            self._draw_msaa_pattern_legend(painter, generate_msaa_sample_positions(self.config.msaa))
+            return
+
+        msaa_positions = generate_msaa_sample_positions(self.config.msaa)
+        pixel_size = self._projected_pixel_size()
+        marker_size = max(4.0, min(10.0, pixel_size * 0.45))
+        label_samples = pixel_size >= 10.0
+        drawn_pixels = 0
+
+        for result in self.rasterized_results:
+            tri_color = QColor(result.triangle.color[0], result.triangle.color[1], result.triangle.color[2])
+            for px, py in result.covered_pixels:
+                if drawn_pixels >= 2500:
+                    self._draw_msaa_pattern_legend(painter, msaa_positions)
+                    return
+                coverage = result.coverage_mask.get((px, py), 0)
+                for sample_idx, (sx, sy) in enumerate(msaa_positions):
+                    covered = (coverage >> sample_idx) & 1
+                    cx, cy = self._project(px + sx, py + sy, 0.025)
+                    if covered:
+                        painter.setBrush(QBrush(tri_color.lighter(130)))
+                        painter.setPen(QPen(QColor(255, 255, 255), 1))
+                    else:
+                        painter.setBrush(QBrush(QColor(25, 25, 25, 190)))
+                        painter.setPen(QPen(QColor(190, 190, 190), 1))
+                    painter.drawEllipse(int(cx - marker_size / 2), int(cy - marker_size / 2), int(marker_size), int(marker_size))
+
+                    if label_samples:
+                        painter.setFont(QFont("Consolas", 7))
+                        painter.setPen(QPen(QColor(255, 255, 255) if covered else QColor(210, 210, 210)))
+                        painter.drawText(int(cx + marker_size / 2 + 1), int(cy - marker_size / 2 - 1), str(sample_idx))
+
+                if self.show_coverage_mask and pixel_size >= 7.0:
+                    tx, ty = self._project(px + 0.05, py + 0.95, 0.03)
+                    painter.setPen(QPen(QColor(255, 255, 200)))
+                    painter.setFont(QFont("Consolas", 7))
+                    painter.drawText(int(tx), int(ty), f"0b{coverage:0{self.config.msaa}b}")
+                drawn_pixels += 1
+
+        self._draw_msaa_pattern_legend(painter, msaa_positions)
+
+    def _draw_screen_border(self, painter: QPainter):
+        sw = self.config.screen_width
+        sh = self.config.screen_height
+        painter.setBrush(Qt.BrushStyle.NoBrush)
+        painter.setPen(QPen(QColor(170, 175, 195), 2))
+        self._draw_projected_rect(painter, 0, 0, sw, sh, 0.02)
+        sx, sy = self._project(0, 0, 0.02)
+        painter.setFont(QFont("Arial", 9))
+        painter.setPen(QPen(QColor(210, 212, 225)))
+        painter.drawText(int(sx), int(sy - 6), f"Screen {sw}x{sh}")
 
     def _draw_axes(self, painter: QPainter):
         origin = (self.width() - 82, self.height() - 62)
@@ -156,60 +461,44 @@ class View3D(QWidget):
         x2, y2, _ = self._rotate_vector(x, y, z)
         return (x2 * axis_len, -y2 * axis_len)
 
-    def _draw_grid(self, painter: QPainter):
-        sw = self.config.screen_width
-        sh = self.config.screen_height
-        steps = 8
+    def _draw_msaa_pattern_legend(self, painter: QPainter, msaa_positions: list):
+        legend_size = 112
+        margin = 12
+        x0 = self.width() - legend_size - margin
+        y0 = margin
 
-        painter.setPen(QPen(QColor(65, 72, 90), 1))
-        for i in range(steps + 1):
-            frac = i / steps
-            p1 = self._project(0, sh * frac, 0)
-            p2 = self._project(sw, sh * frac, 0)
-            painter.drawLine(int(p1[0]), int(p1[1]), int(p2[0]), int(p2[1]))
+        painter.setBrush(QBrush(QColor(20, 22, 28, 220)))
+        painter.setPen(QPen(QColor(150, 160, 180), 1))
+        painter.drawRect(x0, y0, legend_size, legend_size + 28)
 
-            p1 = self._project(sw * frac, 0, 0)
-            p2 = self._project(sw * frac, sh, 0)
-            painter.drawLine(int(p1[0]), int(p1[1]), int(p2[0]), int(p2[1]))
+        painter.setPen(QPen(QColor(235, 235, 235)))
+        painter.setFont(QFont("Consolas", 9, QFont.Weight.Bold))
+        painter.drawText(x0 + 8, y0 + 17, f"{self.config.msaa}x MSAA samples")
 
-    def _draw_triangle(self, painter: QPainter, triangle: Triangle, index: int):
-        color = QColor(triangle.color[0], triangle.color[1], triangle.color[2])
-        points = [self._project(v[0], v[1], v[2]) for v in triangle.vertices]
+        cell_x = x0 + 18
+        cell_y = y0 + 30
+        cell_size = 76
+        painter.setBrush(QBrush(QColor(45, 48, 58)))
+        painter.setPen(QPen(QColor(110, 120, 140), 1))
+        painter.drawRect(cell_x, cell_y, cell_size, cell_size)
 
-        polygon = QPolygonF()
-        for sx, sy in points:
-            polygon.append(QPointF(sx, sy))
-
-        painter.setBrush(QBrush(QColor(color.red(), color.green(), color.blue(), 85)))
-        painter.setPen(QPen(color.lighter(120), 2))
-        painter.drawPolygon(polygon)
-
-        for v in triangle.vertices:
-            base = self._project(v[0], v[1], 0)
-            tip = self._project(v[0], v[1], v[2])
-            painter.setPen(QPen(QColor(180, 185, 205, 90), 1, Qt.PenStyle.DashLine))
-            painter.drawLine(int(base[0]), int(base[1]), int(tip[0]), int(tip[1]))
-
-        painter.setBrush(QBrush(color.lighter(125)))
-        painter.setPen(QPen(QColor(245, 245, 245), 1))
-        for k, v in enumerate(triangle.vertices):
-            sx, sy = self._project(v[0], v[1], v[2])
-            painter.drawEllipse(int(sx - 5), int(sy - 5), 10, 10)
-            painter.setFont(QFont("Arial", 8))
-            painter.drawText(int(sx + 8), int(sy - 8), f"V{k}")
-
-        avg_sx = sum(p[0] for p in points) / 3
-        avg_sy = sum(p[1] for p in points) / 3
-        painter.setFont(QFont("Arial", 11, QFont.Weight.Bold))
-        painter.setPen(QPen(color.lighter(130)))
-        painter.drawText(int(avg_sx + 12), int(avg_sy - 12), f"T{index}")
+        for idx, (sx, sy) in enumerate(msaa_positions):
+            px = cell_x + sx * cell_size
+            py = cell_y + sy * cell_size
+            painter.setBrush(QBrush(QColor(255, 210, 90)))
+            painter.setPen(QPen(QColor(30, 30, 30), 1))
+            painter.drawEllipse(int(px - 4), int(py - 4), 8, 8)
+            painter.setPen(QPen(QColor(255, 255, 255)))
+            painter.setFont(QFont("Consolas", 8))
+            painter.drawText(int(px + 6), int(py - 5), str(idx))
 
     def _draw_overlay(self, painter: QPainter):
         mode = "Free drag" if self.free_rotate else "Fixed/buttons"
+        total_pixels = sum(len(r.covered_pixels) for r in self.rasterized_results)
         painter.setPen(QPen(QColor(220, 220, 225)))
         painter.setFont(QFont("Arial", 9))
         painter.drawText(10, 20, f"Mode: {self.view_mode} | Rot XYZ: ({self.rot_x:.0f}, {self.rot_y:.0f}, {self.rot_z:.0f}) | Zoom: {self.zoom:.2f}")
-        painter.drawText(10, 36, f"Input: {mode} | Default mode is Top, buttons rotate around X/Y/Z axes")
+        painter.drawText(10, 36, f"Input: {mode} | Raster pixels: {total_pixels} | MSAA: {self.config.msaa}x")
 
     def _view_name(self) -> str:
         return self.view_mode
@@ -224,6 +513,8 @@ class View3D(QWidget):
     def mousePressEvent(self, event):
         if self.free_rotate and event.button() == Qt.MouseButton.LeftButton:
             self._last_pos = event.pos()
+        elif event.button() == Qt.MouseButton.LeftButton:
+            self._show_hover_info(event)
 
     def mouseMoveEvent(self, event):
         if self.free_rotate and self._last_pos and event.buttons() & Qt.MouseButton.LeftButton:
@@ -232,19 +523,34 @@ class View3D(QWidget):
             self.rotate_y(dx * 0.5)
             self.rotate_x(dy * 0.5)
             self._last_pos = event.pos()
+        else:
+            self._show_hover_info(event)
 
     def mouseReleaseEvent(self, event):
         self._last_pos = None
+
+    def _show_hover_info(self, event):
+        screen_pos = self._screen_point_from_view(event.pos().x(), event.pos().y())
+        if not screen_pos or not self.config:
+            return
+        sx, sy = screen_pos
+        if 0 <= sx < self.config.screen_width and 0 <= sy < self.config.screen_height:
+            tile_x = int(sx) // self.config.tile_width
+            tile_y = int(sy) // self.config.tile_height
+            QToolTip.showText(
+                event.globalPosition().toPoint(),
+                f"Pixel: ({int(sx)}, {int(sy)})\nTile: ({tile_x}, {tile_y})"
+            )
 
     def wheelEvent(self, event):
         delta = event.angleDelta().y()
         factor = 1.1 if delta > 0 else 0.9
         self.zoom *= factor
-        self.zoom = max(0.1, min(10.0, self.zoom))
+        self.zoom = max(0.1, min(50.0, self.zoom))
         self.update()
 
     def reset_view(self):
-        self.set_view_perspective()
+        self.set_view_top()
         self.zoom = 1.0
         self.pan_x = 0.0
         self.pan_y = 0.0
@@ -305,7 +611,7 @@ class View3D(QWidget):
         self.rotate_x(degrees)
 
     def set_view_front(self):
-        self._set_view("X-Y Front", 0.0, 0.0, 0.0)
+        self._set_view("X-Y", 0.0, 0.0, 0.0)
 
     def set_view_back(self):
         self._set_view("X-Y Back", 0.0, 180.0, 0.0)
@@ -317,16 +623,56 @@ class View3D(QWidget):
         self._set_view("Y-Z Side", 0.0, -90.0, 0.0)
 
     def set_view_top(self):
-        self._set_view("Top", 90.0, 0.0, 0.0)
+        self._set_view("Top", 0.0, 0.0, 0.0)
 
     def set_view_bottom(self):
-        self._set_view("Bottom", -90.0, 0.0, 0.0)
+        self._set_view("Bottom", 180.0, 0.0, 0.0)
 
     def set_view_xz_side(self):
-        self._set_view("X-Z Side", 0.0, 0.0, 0.0)
+        self._set_view("X-Z Side", 90.0, 0.0, 0.0)
 
     def set_view_yz_side(self):
         self._set_view("Y-Z Side", 0.0, 90.0, 0.0)
 
     def set_view_perspective(self):
         self._set_view("Free 3D", 35.0, -45.0, 0.0)
+
+    def toggle_tiles(self, show: bool):
+        self.show_tiles = show
+        self.update()
+
+    def toggle_scissor(self, show: bool):
+        self.show_scissor = show
+        self.update()
+
+    def toggle_clip(self, show: bool):
+        self.show_clip = show
+        self.update()
+
+    def toggle_raster_pixels(self, show: bool):
+        self.show_raster_pixels = show
+        self.update()
+
+    def toggle_msaa_samples(self, show: bool):
+        self.show_msaa_samples = show
+        self.update()
+
+    def toggle_tile_labels(self, show: bool):
+        self.show_tile_labels = show
+        self.update()
+
+    def toggle_pixel_coords(self, show: bool):
+        self.show_pixel_coords = show
+        self.update()
+
+    def toggle_tile_pixel_axes(self, show: bool):
+        self.show_tile_pixel_axes = show
+        self.update()
+
+    def toggle_vertex_labels(self, show: bool):
+        self.show_vertex_labels = show
+        self.update()
+
+    def toggle_coverage_mask(self, show: bool):
+        self.show_coverage_mask = show
+        self.update()

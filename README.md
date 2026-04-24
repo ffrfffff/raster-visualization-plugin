@@ -70,6 +70,12 @@ python main.py
 
 ## 版本日志
 
+### v0.10.0 (2026-04-24)
+- 3D View 升级为 Combined Raster 3D View：在 3D screen 平面中叠加俯视图的 raster debug 信息
+- 3D View 新增 rasterized pixels / MSAA resolve pixels 绘制，可在旋转视角下观察像素覆盖结果
+- 3D View 新增 tile 网格、tile 索引、tile 坐标轴、pixel grid、clip region、scissor rect、coverage mask、MSAA sample 点和 sample pattern 预览
+- Top View 的显示开关同步控制 3D View 对应图层，3D Popout 会继承 raster 图层和当前显示开关
+
 ### v0.9.0 (2026-04-24)
 - 3D View 升级为 Combined View：默认进入 Top 俯视角，便于直接对齐 screen 平面
 - 新增 Top / X-Z / Y-Z / X-Y / Free 3D 模式按钮，可在 3D 视图内查看俯视、侧视和平面视角
