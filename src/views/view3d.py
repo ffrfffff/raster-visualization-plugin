@@ -19,6 +19,8 @@ class View3D(QWidget):
         self.rot_x = 35.0
         self.rot_y = -45.0
         self.zoom = 1.0
+        self.pan_x = 0.0
+        self.pan_y = 0.0
         self.free_rotate = False
 
         self._last_pos = None
@@ -65,8 +67,8 @@ class View3D(QWidget):
     def _project(self, x: float, y: float, z: float) -> Tuple[float, float]:
         x2, y2, _ = self._transform(x, y, z)
         scale = min(self.width(), self.height()) * 0.36 * self.zoom
-        cx = self.width() / 2
-        cy = self.height() / 2
+        cx = self.width() / 2 + self.pan_x
+        cy = self.height() / 2 + self.pan_y
         return (cx + x2 * scale, cy - y2 * scale)
 
     def paintEvent(self, event):
@@ -226,6 +228,37 @@ class View3D(QWidget):
     def reset_view(self):
         self.set_view_perspective()
         self.zoom = 1.0
+        self.pan_x = 0.0
+        self.pan_y = 0.0
+        self.update()
+
+    def _pan_step(self) -> float:
+        return max(20.0, min(self.width(), self.height()) * 0.08)
+
+    def pan_by(self, dx: float, dy: float):
+        self.pan_x += dx
+        self.pan_y += dy
+        self.update()
+
+    def pan_left(self):
+        self.pan_by(self._pan_step(), 0)
+
+    def pan_right(self):
+        self.pan_by(-self._pan_step(), 0)
+
+    def pan_up(self):
+        self.pan_by(0, self._pan_step())
+
+    def pan_down(self):
+        self.pan_by(0, -self._pan_step())
+
+    def set_pan_offset(self, x: float, y: float):
+        self.pan_x = float(x)
+        self.pan_y = float(y)
+        self.update()
+
+    def get_pan_offset(self) -> Tuple[float, float]:
+        return (self.pan_x, self.pan_y)
 
     def set_free_rotate(self, enabled: bool):
         self.free_rotate = enabled

@@ -37,6 +37,8 @@ python main.py
 
 ### 交互
 - 滚轮缩放（以鼠标位置为中心）
+- 方向按钮和滚动条平移 Top/Depth/3D 视图
+- Top View 支持输入 X/Y 坐标并定位到目标位置
 - 中键/Shift+左键拖拽平移
 - 鼠标悬停显示像素坐标和 tile 索引
 - Pop Top/Depth/3D 按钮弹出独立窗口
@@ -67,6 +69,14 @@ python main.py
 ```
 
 ## 版本日志
+
+### v0.7.0 (2026-04-24)
+- Top View 新增 Go X/Y 坐标定位，可输入 screen 坐标并将目标位置居中
+- Top/3D 上方视图新增方向按钮平移，并根据当前 tab 控制对应视图
+- Depth Side View 新增独立方向按钮平移
+- 新增 Top/3D 与 Depth 的水平/垂直滚动条式位置调节
+- 3D View 支持平移 offset，方向移动不会改变当前旋转角度
+- Popout 工具栏新增 ←/↑/↓/→ 方向平移按钮
 
 ### v0.6.0 (2026-04-24)
 - 修复 MSAA 采样点可视化不明显的问题：高缩放下每个被覆盖 pixel 会显示完整 sample pattern，而不是只看到单个覆盖点

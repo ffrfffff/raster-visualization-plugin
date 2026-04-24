@@ -200,6 +200,34 @@ class DepthSideView(QWidget):
     def mouseReleaseEvent(self, event):
         self._drag_start = None
 
+    def _pan_step(self) -> float:
+        return max(20.0, min(self.width(), self.height()) * 0.08)
+
+    def pan_by(self, dx: float, dy: float):
+        self.offset_x += dx
+        self.offset_y += dy
+        self.update()
+
+    def pan_left(self):
+        self.pan_by(self._pan_step(), 0)
+
+    def pan_right(self):
+        self.pan_by(-self._pan_step(), 0)
+
+    def pan_up(self):
+        self.pan_by(0, self._pan_step())
+
+    def pan_down(self):
+        self.pan_by(0, -self._pan_step())
+
+    def set_pan_offset(self, x: float, y: float):
+        self.offset_x = float(x)
+        self.offset_y = float(y)
+        self.update()
+
+    def get_pan_offset(self) -> Tuple[float, float]:
+        return (self.offset_x, self.offset_y)
+
     def reset_view(self):
         self.zoom = 1.0
         self.offset_x = 0.0

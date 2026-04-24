@@ -1,7 +1,8 @@
 from PyQt6.QtWidgets import (
     QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
     QSplitter, QMenuBar, QMenu, QToolBar, QStatusBar,
-    QCheckBox, QLabel, QMessageBox, QTabWidget, QPushButton
+    QCheckBox, QLabel, QMessageBox, QTabWidget, QPushButton,
+    QSpinBox, QScrollBar
 )
 from PyQt6.QtCore import Qt
 from .models.config import RasterConfigModel
@@ -175,8 +176,73 @@ class MainWindow(QMainWindow):
         options_layout2.addWidget(self.show_grid3d_cb)
         options_layout2.addWidget(self.show_axes3d_cb)
         options_layout2.addStretch()
+
+        # 第三行：定位 + 平移按钮
+        options_layout3 = QHBoxLayout()
+        options_layout3.addWidget(QLabel("Go Top X:"))
+        self.goto_x_spin = QSpinBox()
+        self.goto_x_spin.setRange(0, self.config_model.config.screen_width)
+        self.goto_x_spin.setValue(self.config_model.config.screen_width // 2)
+        self.goto_x_spin.setFixedWidth(80)
+        self.goto_y_spin = QSpinBox()
+        self.goto_y_spin.setRange(0, self.config_model.config.screen_height)
+        self.goto_y_spin.setValue(self.config_model.config.screen_height // 2)
+        self.goto_y_spin.setFixedWidth(80)
+        self.goto_btn = QPushButton("Go")
+        self.goto_btn.setFixedWidth(42)
+        options_layout3.addWidget(self.goto_x_spin)
+        options_layout3.addWidget(QLabel("Y:"))
+        options_layout3.addWidget(self.goto_y_spin)
+        options_layout3.addWidget(self.goto_btn)
+
+        options_layout3.addWidget(QLabel("| Top/3D Pan:"))
+        self.main_pan_left_btn = QPushButton("←")
+        self.main_pan_up_btn = QPushButton("↑")
+        self.main_pan_down_btn = QPushButton("↓")
+        self.main_pan_right_btn = QPushButton("→")
+        for btn in [self.main_pan_left_btn, self.main_pan_up_btn,
+                     self.main_pan_down_btn, self.main_pan_right_btn]:
+            btn.setFixedWidth(28)
+            options_layout3.addWidget(btn)
+
+        options_layout3.addWidget(QLabel("| Depth Pan:"))
+        self.depth_pan_left_btn = QPushButton("←")
+        self.depth_pan_up_btn = QPushButton("↑")
+        self.depth_pan_down_btn = QPushButton("↓")
+        self.depth_pan_right_btn = QPushButton("→")
+        for btn in [self.depth_pan_left_btn, self.depth_pan_up_btn,
+                     self.depth_pan_down_btn, self.depth_pan_right_btn]:
+            btn.setFixedWidth(28)
+            options_layout3.addWidget(btn)
+        options_layout3.addStretch()
+
+        # 第四行：滚动条导航
+        scroll_layout = QHBoxLayout()
+        scroll_layout.addWidget(QLabel("Top/3D H:"))
+        self.main_h_scroll = QScrollBar(Qt.Orientation.Horizontal)
+        self.main_h_scroll.setRange(-5000, 5000)
+        self.main_h_scroll.setValue(0)
+        scroll_layout.addWidget(self.main_h_scroll, stretch=1)
+        scroll_layout.addWidget(QLabel("V:"))
+        self.main_v_scroll = QScrollBar(Qt.Orientation.Horizontal)
+        self.main_v_scroll.setRange(-5000, 5000)
+        self.main_v_scroll.setValue(0)
+        scroll_layout.addWidget(self.main_v_scroll, stretch=1)
+        scroll_layout.addWidget(QLabel("Depth H:"))
+        self.depth_h_scroll = QScrollBar(Qt.Orientation.Horizontal)
+        self.depth_h_scroll.setRange(-5000, 5000)
+        self.depth_h_scroll.setValue(0)
+        scroll_layout.addWidget(self.depth_h_scroll, stretch=1)
+        scroll_layout.addWidget(QLabel("V:"))
+        self.depth_v_scroll = QScrollBar(Qt.Orientation.Horizontal)
+        self.depth_v_scroll.setRange(-5000, 5000)
+        self.depth_v_scroll.setValue(0)
+        scroll_layout.addWidget(self.depth_v_scroll, stretch=1)
+
         right_layout.addLayout(options_layout)
         right_layout.addLayout(options_layout2)
+        right_layout.addLayout(options_layout3)
+        right_layout.addLayout(scroll_layout)
 
         # 三角形列表
         self.triangle_panel = TriangleListPanel()
@@ -252,15 +318,84 @@ class MainWindow(QMainWindow):
         self.zoom_fit_btn.clicked.connect(self.raster_view.fit_to_view)
         self.zoom_reset_btn.clicked.connect(self.raster_view.reset_view)
 
+        self.goto_btn.clicked.connect(self._goto_top_position)
+        self.main_pan_left_btn.clicked.connect(lambda: self._pan_active_main_view('left'))
+        self.main_pan_up_btn.clicked.connect(lambda: self._pan_active_main_view('up'))
+        self.main_pan_down_btn.clicked.connect(lambda: self._pan_active_main_view('down'))
+        self.main_pan_right_btn.clicked.connect(lambda: self._pan_active_main_view('right'))
+        self.depth_pan_left_btn.clicked.connect(lambda: self._pan_view(self.depth_view, 'left'))
+        self.depth_pan_up_btn.clicked.connect(lambda: self._pan_view(self.depth_view, 'up'))
+        self.depth_pan_down_btn.clicked.connect(lambda: self._pan_view(self.depth_view, 'down'))
+        self.depth_pan_right_btn.clicked.connect(lambda: self._pan_view(self.depth_view, 'right'))
+        self.main_h_scroll.valueChanged.connect(lambda value: self._set_active_main_scroll('x', value))
+        self.main_v_scroll.valueChanged.connect(lambda value: self._set_active_main_scroll('y', value))
+        self.depth_h_scroll.valueChanged.connect(lambda value: self._set_view_scroll(self.depth_view, 'x', value))
+        self.depth_v_scroll.valueChanged.connect(lambda value: self._set_view_scroll(self.depth_view, 'y', value))
+        self.view_tabs.currentChanged.connect(lambda _: self._sync_main_scroll_from_active_view())
+
         self.popout_top_btn.clicked.connect(lambda: self._popout_view('top'))
         self.popout_depth_btn.clicked.connect(lambda: self._popout_view('depth'))
         self.popout_3d_btn.clicked.connect(lambda: self._popout_view('3d'))
+
+    def _active_main_view(self):
+        return self.view3d if self.view_tabs.currentWidget() is self.view3d else self.raster_view
+
+    def _goto_top_position(self):
+        self.raster_view.center_on_screen_position(self.goto_x_spin.value(), self.goto_y_spin.value())
+        self.view_tabs.setCurrentWidget(self.raster_view)
+        self._sync_main_scroll_from_active_view()
+
+    def _pan_view(self, view, direction: str):
+        method = getattr(view, f"pan_{direction}", None)
+        if method:
+            method()
+        if view is self.depth_view:
+            self._sync_depth_scroll_from_view()
+        elif view is self._active_main_view():
+            self._sync_main_scroll_from_active_view()
+
+    def _pan_active_main_view(self, direction: str):
+        self._pan_view(self._active_main_view(), direction)
+
+    def _set_active_main_scroll(self, axis: str, value: int):
+        self._set_view_scroll(self._active_main_view(), axis, value)
+
+    def _set_view_scroll(self, view, axis: str, value: int):
+        if not hasattr(view, 'get_pan_offset') or not hasattr(view, 'set_pan_offset'):
+            return
+        x, y = view.get_pan_offset()
+        if axis == 'x':
+            x = value
+        else:
+            y = value
+        view.set_pan_offset(x, y)
+
+    def _sync_scroll_pair(self, h_scroll, v_scroll, view):
+        if not hasattr(view, 'get_pan_offset'):
+            return
+        x, y = view.get_pan_offset()
+        h_scroll.blockSignals(True)
+        v_scroll.blockSignals(True)
+        h_scroll.setValue(max(h_scroll.minimum(), min(h_scroll.maximum(), int(x))))
+        v_scroll.setValue(max(v_scroll.minimum(), min(v_scroll.maximum(), int(y))))
+        h_scroll.blockSignals(False)
+        v_scroll.blockSignals(False)
+
+    def _sync_main_scroll_from_active_view(self):
+        self._sync_scroll_pair(self.main_h_scroll, self.main_v_scroll, self._active_main_view())
+
+    def _sync_depth_scroll_from_view(self):
+        self._sync_scroll_pair(self.depth_h_scroll, self.depth_v_scroll, self.depth_view)
 
     def _on_config_changed(self):
         self.rasterizer.update_config(self.config_model.config)
         self.raster_view.set_config(self.config_model.config)
         self.depth_view.set_config(self.config_model.config)
         self.view3d.set_config(self.config_model.config)
+        self.goto_x_spin.setRange(0, self.config_model.config.screen_width)
+        self.goto_y_spin.setRange(0, self.config_model.config.screen_height)
+        self.goto_x_spin.setValue(min(self.goto_x_spin.value(), self.config_model.config.screen_width))
+        self.goto_y_spin.setValue(min(self.goto_y_spin.value(), self.config_model.config.screen_height))
         self._update_views()
 
     def _on_triangles_changed(self):
@@ -353,6 +488,7 @@ class MainWindow(QMainWindow):
             view.rot_x = self.view3d.rot_x
             view.rot_y = self.view3d.rot_y
             view.zoom = self.view3d.zoom
+            view.set_pan_offset(*self.view3d.get_pan_offset())
             title = "3D View - Popout"
         else:
             return

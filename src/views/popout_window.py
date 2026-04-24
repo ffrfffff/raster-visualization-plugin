@@ -31,7 +31,17 @@ class PopoutWindow(QMainWindow):
         toolbar.addAction("Fit", self._fit)
         toolbar.addAction("1:1", self._reset)
         toolbar.addSeparator()
+        toolbar.addAction("←", lambda: self._pan('left'))
+        toolbar.addAction("↑", lambda: self._pan('up'))
+        toolbar.addAction("↓", lambda: self._pan('down'))
+        toolbar.addAction("→", lambda: self._pan('right'))
+        toolbar.addSeparator()
         toolbar.addAction("Close", self.close)
+
+    def _pan(self, direction: str):
+        method = getattr(self.view, f"pan_{direction}", None)
+        if method:
+            method()
 
     def _zoom_in(self):
         if hasattr(self.view, 'zoom_in'):

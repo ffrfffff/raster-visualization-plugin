@@ -477,6 +477,43 @@ class RasterView(QWidget):
         self.offset_y = 10
         self.update()
 
+    def center_on_screen_position(self, x: float, y: float):
+        if not self.config:
+            return
+        x = max(0.0, min(float(self.config.screen_width), float(x)))
+        y = max(0.0, min(float(self.config.screen_height), float(y)))
+        self.offset_x = self.width() / 2 - x * self.zoom
+        self.offset_y = self.height() / 2 - y * self.zoom
+        self.update()
+
+    def _pan_step(self) -> float:
+        return max(20.0, min(self.width(), self.height()) * 0.08)
+
+    def pan_by(self, dx: float, dy: float):
+        self.offset_x += dx
+        self.offset_y += dy
+        self.update()
+
+    def pan_left(self):
+        self.pan_by(self._pan_step(), 0)
+
+    def pan_right(self):
+        self.pan_by(-self._pan_step(), 0)
+
+    def pan_up(self):
+        self.pan_by(0, self._pan_step())
+
+    def pan_down(self):
+        self.pan_by(0, -self._pan_step())
+
+    def set_pan_offset(self, x: float, y: float):
+        self.offset_x = float(x)
+        self.offset_y = float(y)
+        self.update()
+
+    def get_pan_offset(self) -> Tuple[float, float]:
+        return (self.offset_x, self.offset_y)
+
     def toggle_tiles(self, show: bool):
         self.show_tiles = show
         self.update()
