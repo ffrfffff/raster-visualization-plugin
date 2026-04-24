@@ -120,28 +120,29 @@ class View3D(QWidget):
         painter.drawText(10, 35, "Drag to rotate, Scroll to zoom")
 
     def _draw_axes(self, painter: QPainter):
-        """绘制 X/Y/Z 坐标轴"""
-        origin = self._project(0, 0, 0)
+        """绘制 X/Y/Z 坐标轴（在归一化空间中画，保证互相垂直）"""
+        # 在归一化空间 [-1,1] 中定义轴端点
+        # 原点在屏幕中心
+        sw = self.config.screen_width
+        sh = self.config.screen_height
+        origin = self._project(sw / 2, sh / 2, 0)
         axis_len = 0.5
 
-        # X 轴 (红色)
-        x_end = self._project(self.config.screen_width * axis_len + self.config.screen_width / 2,
-                              self.config.screen_height / 2, 0)
+        # X 轴 (红色) - 向右
+        x_end = self._project(sw / 2 + sw * axis_len / 2, sh / 2, 0)
         painter.setPen(QPen(QColor(255, 80, 80), 2))
         painter.drawLine(int(origin[0]), int(origin[1]), int(x_end[0]), int(x_end[1]))
         painter.setFont(QFont("Arial", 10))
         painter.drawText(int(x_end[0]) + 5, int(x_end[1]) - 5, "X")
 
-        # Y 轴 (绿色)
-        y_end = self._project(self.config.screen_width / 2,
-                              self.config.screen_height * (0.5 - axis_len), 0)
+        # Y 轴 (绿色) - 向上
+        y_end = self._project(sw / 2, sh / 2 - sh * axis_len / 2, 0)
         painter.setPen(QPen(QColor(80, 255, 80), 2))
         painter.drawLine(int(origin[0]), int(origin[1]), int(y_end[0]), int(y_end[1]))
         painter.drawText(int(y_end[0]) + 5, int(y_end[1]) - 5, "Y")
 
-        # Z 轴 (蓝色)
-        z_end = self._project(self.config.screen_width / 2,
-                              self.config.screen_height / 2, axis_len * 2)
+        # Z 轴 (蓝色) - 向前（深度正方向）
+        z_end = self._project(sw / 2, sh / 2, axis_len)
         painter.setPen(QPen(QColor(80, 80, 255), 2))
         painter.drawLine(int(origin[0]), int(origin[1]), int(z_end[0]), int(z_end[1]))
         painter.drawText(int(z_end[0]) + 5, int(z_end[1]) - 5, "Z")
@@ -241,4 +242,46 @@ class View3D(QWidget):
         self.rot_x = 30.0
         self.rot_y = -45.0
         self.zoom = 1.0
+        self.update()
+
+    def set_view_front(self):
+        """正视图：从 -Z 方向看"""
+        self.rot_x = 0.0
+        self.rot_y = 0.0
+        self.update()
+
+    def set_view_back(self):
+        """后视图"""
+        self.rot_x = 0.0
+        self.rot_y = 180.0
+        self.update()
+
+    def set_view_left(self):
+        """左视图"""
+        self.rot_x = 0.0
+        self.rot_y = 90.0
+        self.update()
+
+    def set_view_right(self):
+        """右视图"""
+        self.rot_x = 0.0
+        self.rot_y = -90.0
+        self.update()
+
+    def set_view_top(self):
+        """俯视图"""
+        self.rot_x = 90.0
+        self.rot_y = 0.0
+        self.update()
+
+    def set_view_bottom(self):
+        """仰视图"""
+        self.rot_x = -90.0
+        self.rot_y = 0.0
+        self.update()
+
+    def set_view_perspective(self):
+        """透视默认角度"""
+        self.rot_x = 30.0
+        self.rot_y = -45.0
         self.update()

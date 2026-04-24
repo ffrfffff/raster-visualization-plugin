@@ -1,6 +1,6 @@
 from PyQt6.QtWidgets import QWidget, QToolTip
 from PyQt6.QtCore import Qt, QPoint, QRect
-from PyQt6.QtGui import QPainter, QPen, QColor, QBrush, QFont, QPolygon, QTransform
+from PyQt6.QtGui import QPainter, QPen, QColor, QBrush, QFont, QPolygon, QFontMetrics
 from typing import List, Tuple, Optional
 from ..models.config import RasterConfig
 from ..models.triangle import Triangle, RasterizedTriangle
@@ -36,6 +36,9 @@ class RasterView(QWidget):
         self.show_msaa_samples = False
         self.show_tile_labels = True
         self.show_pixel_coords = True
+        self.show_tile_pixel_axes = True  # tile 边界的像素坐标轴刻度
+        self.show_vertex_labels = True    # 三角形顶点坐标标签
+        self.show_coverage_mask = True    # MSAA coverage mask 标签
 
         self._drag_start = None
         self._drag_offset_start = None
@@ -106,44 +109,61 @@ class RasterView(QWidget):
                 painter.setPen(QPen(QColor(60, 60, 70), 1))
                 painter.drawLine(int(ox), y, int(ox + sw * scale), y)
 
-            # Tile 坐标标注（缩放足够大时显示）
+            # Tile 索引标注 (i,j)
             if self.show_tile_labels and scale >= 0.5:
                 font_size = max(7, min(11, int(8 * scale)))
                 painter.setFont(QFont("Consolas", font_size))
                 painter.setPen(QPen(QColor(90, 90, 110)))
+                fm = QFontMetrics(painter.font())
 
                 for i in range(self.config.tile_count_x):
                     for j in range(self.config.tile_count_y):
                         tile_cx = ox + (i * tw + tw / 2) * scale
                         tile_cy = oy + (j * th + th / 2) * scale
                         label = f"({i},{j})"
+                        label_w = fm.horizontalAdvance(label)
+                        label_h = fm.height()
+                        tile_w_px = tw * scale
+                        tile_h_px = th * scale
                         # 只在 tile 内部能放下文字时绘制
-                        if tw * scale > 30 and th * scale > 14:
+                        if tile_w_px > label_w + 4 and tile_h_px > label_h + 2:
                             painter.drawText(
-                                int(tile_cx - len(label) * font_size / 2.5),
-                                int(tile_cy + font_size / 3),
+                                int(tile_cx - label_w / 2),
+                                int(tile_cy + label_h / 3),
                                 label
                             )
 
-                # Tile 像素坐标标注（缩放足够大时在 tile 边标注起止像素）
-                if scale >= 1.0:
-                    small_font = max(6, min(9, int(7 * min(scale, 3))))
-                    painter.setFont(QFont("Consolas", small_font))
-                    painter.setPen(QPen(QColor(70, 70, 90)))
-                    for i in range(self.config.tile_count_x + 1):
+            # Tile 边界像素坐标轴刻度
+            if self.show_tile_pixel_axes and scale >= 0.5:
+                small_font = max(6, min(9, int(7 * min(scale, 3))))
+                painter.setFont(QFont("Consolas", small_font))
+                fm_small = QFontMetrics(painter.font())
+                painter.setPen(QPen(QColor(70, 70, 90)))
+
+                # X 轴刻度：只在有空间放下数字时标注，否则间隔标注
+                x_label_h = fm_small.height()
+                if oy - x_label_h - 3 > 0:
+                    step_x = max(1, (fm_small.horizontalAdvance(str(sw)) + 4) // max(1, int(tw * scale)) + 1)
+                    for i in range(0, self.config.tile_count_x + 1, step_x):
                         x_pixel = i * tw
                         vx = int(ox + x_pixel * scale)
-                        painter.drawText(vx - 10, int(oy - 3), str(x_pixel))
-                    for j in range(self.config.tile_count_y + 1):
+                        text = str(x_pixel)
+                        tw_px = fm_small.horizontalAdvance(text)
+                        painter.drawText(vx - tw_px // 2, int(oy - 3), text)
+
+                # Y 轴刻度
+                y_label_w = fm_small.horizontalAdvance(str(sh))
+                if ox - y_label_w - 3 > 0:
+                    step_y = max(1, (fm_small.height() + 2) // max(1, int(th * scale)) + 1)
+                    for j in range(0, self.config.tile_count_y + 1, step_y):
                         y_pixel = j * th
                         vy = int(oy + y_pixel * scale)
-                        painter.drawText(int(ox - 30), vy + 4, str(y_pixel))
+                        text = str(y_pixel)
+                        painter.drawText(int(ox - fm_small.horizontalAdvance(text) - 3), vy + x_label_h // 3, text)
 
         # ---- 像素坐标网格（高缩放时） ----
         if self.show_pixel_coords and scale >= 4.0:
-            # 绘制像素边界
             painter.setPen(QPen(QColor(50, 50, 55), 1))
-            # 只绘制可见区域的像素线
             vis_min_x = max(0, int(-ox / scale))
             vis_min_y = max(0, int(-oy / scale))
             vis_max_x = min(sw, int((self.width() - ox) / scale) + 1)
@@ -156,16 +176,41 @@ class RasterView(QWidget):
                 y = int(oy + py * scale)
                 painter.drawLine(int(ox), y, int(ox + sw * scale), y)
 
-            # 像素坐标标注（缩放很大时每个像素标注）
+            # 像素坐标标注 - 根据缩放级别自动选择标注方式
             if scale >= 8.0:
                 coord_font = max(6, min(9, int(6 * min(scale / 8, 3))))
                 painter.setFont(QFont("Consolas", coord_font))
+                fm_coord = QFontMetrics(painter.font())
                 painter.setPen(QPen(QColor(80, 80, 100)))
+
+                pixel_w = scale  # 一个像素在视图中的宽度
+                pixel_h = scale
+
                 for px in range(vis_min_x, vis_max_x):
                     for py in range(vis_min_y, vis_max_y):
                         cx = ox + (px + 0.5) * scale
                         cy = oy + (py + 0.5) * scale
-                        painter.drawText(int(cx - 12), int(cy + 3), f"{px},{py}")
+
+                        # 尝试不同格式，选择能放下的最短表示
+                        full_label = f"{px},{py}"
+                        label_w = fm_coord.horizontalAdvance(full_label)
+                        label_h = fm_coord.height()
+
+                        if pixel_w > label_w + 2 and pixel_h > label_h:
+                            # 能放下 x,y
+                            painter.drawText(int(cx - label_w / 2), int(cy + label_h / 3), full_label)
+                        elif pixel_h > label_h:
+                            # 只能放下 x 或 y，交替显示
+                            if (px + py) % 2 == 0:
+                                short = str(px)
+                                sw2 = fm_coord.horizontalAdvance(short)
+                                if pixel_w > sw2 + 2:
+                                    painter.drawText(int(cx - sw2 / 2), int(cy + label_h / 3), short)
+                            else:
+                                short = str(py)
+                                sw2 = fm_coord.horizontalAdvance(short)
+                                if pixel_w > sw2 + 2:
+                                    painter.drawText(int(cx - sw2 / 2), int(cy + label_h / 3), short)
 
         # ---- Clip Region ----
         if self.show_clip:
@@ -194,15 +239,19 @@ class RasterView(QWidget):
             painter.drawText(int(ox + sx * scale + 3), int(oy + sy * scale + 12),
                              f"Scissor({sx},{sy},{s_width},{s_height})")
 
-        # ---- 光栅化像素 ----
+        # ---- 光栅化像素 (MSAA coverage 可视化) ----
         if self.show_raster_pixels and self.rasterized_results:
             for result in self.rasterized_results:
                 color = result.triangle.color
-                fill_color = QColor(color[0], color[1], color[2], 80)
-                painter.setBrush(QBrush(fill_color))
-                painter.setPen(Qt.PenStyle.NoPen)
+                tri_color = QColor(color[0], color[1], color[2])
 
                 for px, py in result.covered_pixels:
+                    ratio = result.coverage_ratio.get((px, py), 1.0)
+                    # coverage ratio 控制透明度: 全覆盖=80%, 部分覆盖按比例
+                    alpha = int(80 * ratio)
+                    fill_color = QColor(tri_color.red(), tri_color.green(), tri_color.blue(), alpha)
+                    painter.setBrush(QBrush(fill_color))
+                    painter.setPen(Qt.PenStyle.NoPen)
                     painter.drawRect(
                         int(ox + px * scale), int(oy + py * scale),
                         int(max(1, scale)), int(max(1, scale))
@@ -229,22 +278,67 @@ class RasterView(QWidget):
                 painter.setPen(QPen(QColor(255, 255, 255), 1))
                 painter.drawEllipse(vx - 5, vy - 5, 10, 10)
 
-                # 坐标标签
-                painter.setPen(QPen(color))
-                label = f"V{vi}({v[0]:.0f},{v[1]:.0f},z={v[2]:.2f})"
-                painter.drawText(vx + 8, vy - 6, label)
+                # 坐标标签（受开关控制）
+                if self.show_vertex_labels:
+                    painter.setPen(QPen(color))
+                    label = f"V{vi}({v[0]:.0f},{v[1]:.0f},z={v[2]:.2f})"
+                    painter.drawText(vx + 8, vy - 6, label)
 
-        # ---- MSAA 采样点 ----
-        if self.show_msaa_samples and self.rasterized_results and self.config.msaa > 1:
-            painter.setPen(QPen(QColor(255, 255, 255), 1))
-            painter.setBrush(QBrush(QColor(255, 255, 255)))
+        # ---- MSAA 采样点 (使用标准旋转网格位置) ----
+        if self.show_msaa_samples and self.rasterized_results:
+            from ..utils.geometry import generate_msaa_sample_positions
+            msaa_positions = generate_msaa_sample_positions(self.config.msaa)
+
             for result in self.rasterized_results:
+                tri_color = QColor(result.triangle.color[0], result.triangle.color[1], result.triangle.color[2])
+
                 for px, py in result.covered_pixels:
-                    for sx, sy in [(0.25, 0.25), (0.75, 0.25), (0.25, 0.75), (0.75, 0.75)][:self.config.msaa]:
-                        painter.drawEllipse(
-                            int(ox + (px + sx) * scale - 1),
-                            int(oy + (py + sy) * scale - 1),
-                            2, 2
+                    coverage = result.coverage_mask.get((px, py), 0)
+
+                    for sample_idx, (sx, sy) in enumerate(msaa_positions):
+                        is_covered = (coverage >> sample_idx) & 1
+
+                        if is_covered:
+                            # 被覆盖的 sample: 实心三角形，使用三角形颜色
+                            painter.setBrush(QBrush(tri_color))
+                            painter.setPen(Qt.PenStyle.NoPen)
+                        else:
+                            # 未覆盖的 sample: 空心圆，灰色
+                            painter.setBrush(Qt.BrushStyle.NoBrush)
+                            painter.setPen(QPen(QColor(100, 100, 100), 1))
+
+                        # 缩放足够大时绘制采样点形状
+                        if scale >= 6.0:
+                            cx = ox + (px + sx) * scale
+                            cy = oy + (py + sy) * scale
+                            r = max(2, min(5, scale / 4))
+
+                            if is_covered:
+                                # 实心小方块
+                                painter.drawRect(int(cx - r/2), int(cy - r/2), int(r), int(r))
+                            else:
+                                # 空心小圆
+                                painter.drawEllipse(int(cx - r/2), int(cy - r/2), int(r), int(r))
+                        else:
+                            # 小缩放下用点
+                            painter.setPen(Qt.PenStyle.NoPen if is_covered else QPen(QColor(100, 100, 100), 1))
+                            if is_covered:
+                                painter.setBrush(QBrush(tri_color))
+                            painter.drawEllipse(
+                                int(ox + (px + sx) * scale - 1),
+                                int(oy + (py + sy) * scale - 1),
+                                2, 2
+                            )
+
+                    # 高缩放时标注 coverage mask（受开关控制）
+                    if self.show_coverage_mask and scale >= 10.0:
+                        painter.setPen(QPen(QColor(255, 255, 200)))
+                        painter.setFont(QFont("Consolas", max(7, min(10, int(scale / 3)))))
+                        mask_text = f"0b{coverage:0{self.config.msaa.bit_length()}b}"
+                        painter.drawText(
+                            int(ox + (px + 0.5) * scale - len(mask_text) * 3),
+                            int(oy + (py + 0.85) * scale),
+                            mask_text
                         )
 
         # ---- 屏幕边框 ----
@@ -380,4 +474,16 @@ class RasterView(QWidget):
 
     def toggle_pixel_coords(self, show: bool):
         self.show_pixel_coords = show
+        self.update()
+
+    def toggle_tile_pixel_axes(self, show: bool):
+        self.show_tile_pixel_axes = show
+        self.update()
+
+    def toggle_vertex_labels(self, show: bool):
+        self.show_vertex_labels = show
+        self.update()
+
+    def toggle_coverage_mask(self, show: bool):
+        self.show_coverage_mask = show
         self.update()

@@ -38,11 +38,22 @@ class Triangle:
 
 @dataclass
 class RasterizedTriangle:
-    """光栅化后的三角形结果"""
+    """光栅化后的三角形结果
+
+    MSAA 详解:
+    - coverage_mask: 每个 pixel 的 sample 覆盖掩码，bit i = 1 表示 sample i 被覆盖
+    - sample_depths: 每个 pixel 的每个 sample 的深度值 (仅被覆盖的 sample)
+    - pixel_center_depth: 像素中心插值的深度 (Pixel Shader 执行位置)
+    - coverage_ratio: 被覆盖 sample 数 / 总 sample 数，用于 resolve
+    """
     triangle: Triangle
     covered_pixels: Set[Tuple[int, int]] = field(default_factory=set)
     depth_values: Dict[Tuple[int, int], float] = field(default_factory=dict)
     msaa_samples: Dict[Tuple[int, int], List[float]] = field(default_factory=dict)
+    coverage_mask: Dict[Tuple[int, int], int] = field(default_factory=dict)
+    sample_depths: Dict[Tuple[int, int], Dict[int, float]] = field(default_factory=dict)
+    pixel_center_depth: Dict[Tuple[int, int], float] = field(default_factory=dict)
+    coverage_ratio: Dict[Tuple[int, int], float] = field(default_factory=dict)
 
 
 class TriangleListModel(QObject):
