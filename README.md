@@ -36,14 +36,15 @@ python main.py
 - 使用重心坐标进行深度插值。
 - 支持 per-pixel coverage ratio 统计。
 - 支持 per-sample coverage test 和 per-sample depth 记录。
-- 支持 coverage mask 输出和可视化。
+- 支持 coverage mask 输出，并在选中像素的右上角 MSAA sample pattern 预览框中显示。
 - 支持 MSAA resolve：根据 sample 覆盖率和深度结果混合颜色。
 - 状态栏显示三角形数量、光栅化像素数量和深度范围。
 
 ### MSAA 可视化
 - 支持 1x / 2x / 4x / 8x / 16x MSAA 切换。
 - MSAA 采样点使用旋转网格分布，便于观察不同 MSAA 模式下 sample 位置差异。
-- MSAA sample pattern 默认在右上角预览框中显示，不再在每个 pixel 内重复绘制 sample 点和 coverage mask。
+- 右上角 MSAA sample pattern 预览框默认开启，不再提供单独显示开关。
+- 不再在每个 pixel 内重复绘制 sample 点和 coverage mask，避免高缩放或大面积三角形下绘制过重。
 - 点击 Top View 或 3D View 中的像素后，右上角 MSAA sample pattern 会显示该像素各 sample 的命中状态。
 - 被选中像素的 sample 命中时显示红色，未命中时显示黑色，并显示对应 coverage mask。
 - sample 点显示编号，方便对照 coverage mask bit 位。
@@ -56,7 +57,7 @@ python main.py
 - 支持 tile 边界上的像素坐标刻度。
 - 支持高缩放下显示 pixel grid 和 pixel 坐标。
 - 像素坐标会根据格子大小自动裁剪或简化，避免文字挤出 pixel。
-- 支持 Coverage Mask 显示，可查看每个边缘像素的 sample 覆盖情况。
+- 不再提供 `Cov Mask` 和 `MSAA` 显示开关；coverage mask 和 MSAA sample 命中状态统一在右上角默认预览框中查看。
 - 鼠标悬停显示当前 pixel 坐标和 tile 索引。
 - 鼠标点击 screen 内像素后，右上角 MSAA sample 预览框会显示该像素 sample 命中/未命中状态。
 - 支持输入 `Go Top X/Y`，把指定 screen 坐标定位到视图中心。
@@ -78,7 +79,7 @@ python main.py
 - 支持 Free Drag 开关，开启后可用鼠标自由旋转，默认关闭以避免误操作。
 - 支持正交投影，减少透视变形，便于对齐 screen 平面。
 - 支持右下角独立 X/Y/Z 坐标轴指示器，不遮挡 screen 内容。
-- 支持 screen 平面底板、tile 网格、tile index、tile 坐标轴、pixel grid、clip、scissor、Depth Surface、RT Surface、raster pixels 和右上角 MSAA sample pattern 预览。
+- 支持 screen 平面底板、tile 网格、tile index、tile 坐标轴、pixel grid、clip、scissor、Depth Surface、RT Surface、raster pixels 和右上角默认开启的 MSAA sample pattern 预览。
 - 非正方形 screen 使用统一比例归一化，保证 3D View 中 pixel 不被拉伸。
 - 3D 像素坐标会按当前格子显示空间裁剪，放不下时自动隐藏，避免挤出格子。
 - 滚轮缩放以鼠标当前位置为锚点，和 Top View 一样保持鼠标下的内容位置稳定。
@@ -90,7 +91,6 @@ python main.py
 - **Tile Axes**: 显示或隐藏 tile 边界像素坐标刻度。
 - **Pixel Grid**: 显示或隐藏 pixel grid 和 pixel 坐标。
 - **Vtx Labels**: 显示或隐藏顶点坐标标签。
-- **Cov Mask**: 控制右上角 MSAA sample pattern 中选中像素的 coverage mask 显示。
 - **Scissor**: 显示或隐藏 scissor rect。
 - **Clip**: 显示或隐藏 clip region。
 - **Depth Surf**: 显示或隐藏 depth surface size 边界。
@@ -122,7 +122,7 @@ python main.py
 ### 性能优化
 - Top View 的光栅化像素使用 QImage 缓存一次性绘制，避免每帧逐像素 drawRect。
 - 3D View 在 Top 模式下的 raster pixels 也使用 QImage 缓存绘制。
-- 高缩放下只绘制当前可见 screen 范围内的 pixel grid 和坐标标签，MSAA sample 只保留右上角默认预览框，避免逐像素重复绘制。
+- 高缩放下只绘制当前可见 screen 范围内的 pixel grid 和坐标标签，MSAA sample 只保留右上角默认预览框，避免逐像素重复绘制 sample 点和 coverage mask。
 - 配置 Apply 使用批量更新和单次刷新，Top View / 3D View / Popout 复用同一份光栅化结果，减少重复计算。
 - 非 Top 旋转视角限制高成本逐像素/MSAA 绘制数量，减少卡顿。
 - 低缩放时关闭部分抗锯齿以提升绘制性能。
@@ -161,6 +161,7 @@ python main.py
 
 ### v1.0.2 (2026-04-24)
 - 移除 GUI 中的 `Cov Mask` 和 `MSAA` 显示开关，右上角 MSAA sample pattern 预览框改为默认一直显示
+- README 功能说明同步移除已废弃的显示开关描述，并明确 coverage mask / sample 命中状态统一在右上角预览框查看
 - 配置面板 Apply 改为批量更新配置，只触发一次主视图刷新，避免一次配置修改重复光栅化多次
 - Top View、3D View 和 Popout 同步复用同一份光栅化结果，减少配置修改和弹窗同步时的重复计算
 
