@@ -70,6 +70,11 @@ python main.py
 
 ## 版本日志
 
+### v0.13.0 (2026-04-24)
+- Popout 独立窗口新增右侧垂直滚动条和下侧水平滚动条，与主 GUI 的视图导航布局保持一致
+- Popout 滚动条可直接调节 Top/Depth/3D 弹出视图的 pan offset
+- Popout 工具栏方向按钮、Fit、1:1 操作后会同步更新滚动条位置
+
 ### v0.12.0 (2026-04-24)
 - 主视图和 Depth Side View 的位置调节改为贴在视图右侧/下侧的滚动条，不再使用 GUI 顶部的上下左右方向按钮
 - 切换到 3D View 时自动隐藏下方 Depth Side View，让 3D 视图占用完整主视图空间；切回 Top View 时恢复侧视图

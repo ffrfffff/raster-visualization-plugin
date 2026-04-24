@@ -501,6 +501,8 @@ class MainWindow(QMainWindow):
                 view.show_grid = self.show_grid3d_cb.isChecked()
                 view.show_axes = self.show_axes3d_cb.isChecked()
                 view.set_free_rotate(self.free_rotate3d_cb.isChecked())
+            if hasattr(window, '_sync_scrollbars_from_view'):
+                window._sync_scrollbars_from_view()
             live_entries.append((window, view_type))
         self._popout_entries = live_entries
 
