@@ -30,6 +30,7 @@ class View3D(QWidget):
         self.free_rotate = False
 
         self._last_pos = None
+        self.selected_msaa_pixel: Optional[Tuple[int, int]] = None
         self._pixel_image: Optional[QImage] = None
         self._pixel_image_msaa: Optional[QImage] = None
         self._pixel_image_dirty = True
@@ -494,7 +495,7 @@ class View3D(QWidget):
 
     def _draw_msaa_samples(self, painter: QPainter):
         if not self.rasterized_results or not self.config:
-            self._draw_msaa_pattern_legend(painter, generate_msaa_sample_positions(self.config.msaa))
+            self._draw_msaa_pattern_legend(painter, generate_msaa_sample_positions(self.config.msaa), self._selected_msaa_mask())
             return
 
         msaa_positions = generate_msaa_sample_positions(self.config.msaa)
@@ -511,7 +512,7 @@ class View3D(QWidget):
                 if not (min_x <= px < max_x and min_y <= py < max_y):
                     continue
                 if drawn_pixels >= max_drawn_pixels:
-                    self._draw_msaa_pattern_legend(painter, msaa_positions)
+                    self._draw_msaa_pattern_legend(painter, msaa_positions, self._selected_msaa_mask())
                     return
                 coverage = result.coverage_mask.get((px, py), 0)
                 for sample_idx, (sx, sy) in enumerate(msaa_positions):
@@ -537,7 +538,7 @@ class View3D(QWidget):
                     painter.drawText(int(tx), int(ty), f"0b{coverage:0{self.config.msaa}b}")
                 drawn_pixels += 1
 
-        self._draw_msaa_pattern_legend(painter, msaa_positions)
+        self._draw_msaa_pattern_legend(painter, msaa_positions, self._selected_msaa_mask())
 
     def _draw_screen_border(self, painter: QPainter):
         sw = self.config.screen_width
@@ -582,7 +583,20 @@ class View3D(QWidget):
         x2, y2, _ = self._rotate_vector(x, y, z)
         return (x2 * axis_len, -y2 * axis_len)
 
-    def _draw_msaa_pattern_legend(self, painter: QPainter, msaa_positions: list):
+    def _selected_msaa_mask(self) -> Optional[int]:
+        if not self.selected_msaa_pixel or not self.config:
+            return None
+        px, py = self.selected_msaa_pixel
+        mask = 0
+        best_depths = {}
+        for result in self.rasterized_results:
+            for sample_idx, depth in result.sample_depths.get((px, py), {}).items():
+                if sample_idx not in best_depths or depth < best_depths[sample_idx]:
+                    best_depths[sample_idx] = depth
+                    mask |= (1 << sample_idx)
+        return mask
+
+    def _draw_msaa_pattern_legend(self, painter: QPainter, msaa_positions: list, selected_mask: Optional[int] = None):
         legend_size = 112
         margin = 12
         x0 = self.width() - legend_size - margin
@@ -594,7 +608,10 @@ class View3D(QWidget):
 
         painter.setPen(QPen(QColor(235, 235, 235)))
         painter.setFont(QFont("Consolas", 9, QFont.Weight.Bold))
-        painter.drawText(x0 + 8, y0 + 17, f"{self.config.msaa}x MSAA samples")
+        title = f"{self.config.msaa}x MSAA samples"
+        if self.selected_msaa_pixel:
+            title = f"Pixel {self.selected_msaa_pixel} samples"
+        painter.drawText(x0 + 8, y0 + 17, title)
 
         cell_x = x0 + 18
         cell_y = y0 + 30
@@ -606,12 +623,29 @@ class View3D(QWidget):
         for idx, (sx, sy) in enumerate(msaa_positions):
             px = cell_x + sx * cell_size
             py = cell_y + sy * cell_size
-            painter.setBrush(QBrush(QColor(255, 210, 90)))
-            painter.setPen(QPen(QColor(30, 30, 30), 1))
-            painter.drawEllipse(int(px - 4), int(py - 4), 8, 8)
-            painter.setPen(QPen(QColor(255, 255, 255)))
+            if selected_mask is None:
+                fill = QColor(255, 210, 90)
+                outline = QColor(30, 30, 30)
+                text_color = QColor(255, 255, 255)
+            elif (selected_mask >> idx) & 1:
+                fill = QColor(235, 45, 45)
+                outline = QColor(255, 230, 230)
+                text_color = QColor(255, 255, 255)
+            else:
+                fill = QColor(0, 0, 0)
+                outline = QColor(180, 180, 180)
+                text_color = QColor(220, 220, 220)
+            painter.setBrush(QBrush(fill))
+            painter.setPen(QPen(outline, 1))
+            painter.drawEllipse(int(px - 5), int(py - 5), 10, 10)
+            painter.setPen(QPen(text_color))
             painter.setFont(QFont("Consolas", 8))
-            painter.drawText(int(px + 6), int(py - 5), str(idx))
+            painter.drawText(int(px + 7), int(py - 5), str(idx))
+
+        if selected_mask is not None:
+            painter.setPen(QPen(QColor(220, 220, 225)))
+            painter.setFont(QFont("Consolas", 8))
+            painter.drawText(x0 + 8, y0 + legend_size + 21, f"mask=0b{selected_mask:0{self.config.msaa}b}")
 
     def _draw_overlay(self, painter: QPainter):
         mode = "Free drag" if self.free_rotate else "Fixed/buttons"
@@ -635,7 +669,7 @@ class View3D(QWidget):
         if self.free_rotate and event.button() == Qt.MouseButton.LeftButton:
             self._last_pos = event.pos()
         elif event.button() == Qt.MouseButton.LeftButton:
-            self._show_hover_info(event)
+            self._show_hover_info(event, select=True)
 
     def mouseMoveEvent(self, event):
         if self.free_rotate and self._last_pos and event.buttons() & Qt.MouseButton.LeftButton:
@@ -650,7 +684,7 @@ class View3D(QWidget):
     def mouseReleaseEvent(self, event):
         self._last_pos = None
 
-    def _show_hover_info(self, event):
+    def _show_hover_info(self, event, select: bool = False):
         screen_pos = self._screen_point_from_view(event.pos().x(), event.pos().y())
         if not screen_pos or not self.config:
             return
@@ -658,6 +692,9 @@ class View3D(QWidget):
         if 0 <= sx < self.config.screen_width and 0 <= sy < self.config.screen_height:
             tile_x = int(sx) // self.config.tile_width
             tile_y = int(sy) // self.config.tile_height
+            if select:
+                self.selected_msaa_pixel = (int(sx), int(sy))
+                self.update()
             QToolTip.showText(
                 event.globalPosition().toPoint(),
                 f"Pixel: ({int(sx)}, {int(sy)})\nTile: ({tile_x}, {tile_y})"

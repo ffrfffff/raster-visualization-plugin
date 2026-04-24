@@ -47,6 +47,8 @@ python main.py
 - 被覆盖 sample 和未覆盖 sample 使用不同填充样式区分。
 - sample 点可显示编号，方便对照 coverage mask bit 位。
 - 右上角显示当前 MSAA sample pattern 预览框。
+- 点击 Top View 或 3D View 中的像素后，右上角 MSAA sample pattern 会显示该像素各 sample 的命中状态。
+- 被选中像素的 sample 命中时显示红色，未命中时显示黑色，并显示对应 coverage mask。
 - Coverage Mask 使用完整 `0b...` 二进制形式显示，并按当前 MSAA sample 数补齐位数。
 - MSAA > 1x 时，光栅化像素可显示 resolve 后的颜色结果。
 
@@ -59,6 +61,7 @@ python main.py
 - 像素坐标会根据格子大小自动裁剪或简化，避免文字挤出 pixel。
 - 支持 Coverage Mask 显示，可查看每个边缘像素的 sample 覆盖情况。
 - 鼠标悬停显示当前 pixel 坐标和 tile 索引。
+- 鼠标点击 screen 内像素后，右上角 MSAA sample 预览框会显示该像素 sample 命中/未命中状态。
 - 支持输入 `Go Top X/Y`，把指定 screen 坐标定位到视图中心。
 
 ### Depth Side View（深度侧视图）
@@ -158,6 +161,11 @@ python main.py
 ```
 
 ## 版本日志
+
+### v1.0.0 (2026-04-24)
+- 发布 1.0.0：完成配置可视化、三角形编辑、软件光栅化、MSAA、Top/Depth/3D 视图、Popout、滚动条导航和性能优化等核心功能
+- Top View 和 3D View 新增点击像素查看 MSAA sample 命中状态，右上角 sample pattern 用红色表示命中、黑色表示未命中
+- 选中像素后 MSAA sample pattern 会显示对应 coverage mask，便于对照 sample 编号和 coverage bit 位
 
 ### v0.18.0 (2026-04-24)
 - 将 `.claude/` 加入 `.gitignore`，避免本地 Claude Code 配置和 hook 文件继续提交到仓库
