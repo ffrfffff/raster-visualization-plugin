@@ -43,17 +43,14 @@ python main.py
 ### MSAA 可视化
 - 支持 1x / 2x / 4x / 8x / 16x MSAA 切换。
 - MSAA 采样点使用旋转网格分布，便于观察不同 MSAA 模式下 sample 位置差异。
-- 高缩放下，每个被覆盖 pixel 内会显示完整 sample pattern。
-- 被覆盖 sample 和未覆盖 sample 使用不同填充样式区分。
-- sample 点可显示编号，方便对照 coverage mask bit 位。
-- 右上角显示当前 MSAA sample pattern 预览框。
+- MSAA sample pattern 只在右上角预览框中显示，不再在每个 pixel 内重复绘制 sample 点和 coverage mask。
 - 点击 Top View 或 3D View 中的像素后，右上角 MSAA sample pattern 会显示该像素各 sample 的命中状态。
 - 被选中像素的 sample 命中时显示红色，未命中时显示黑色，并显示对应 coverage mask。
-- Coverage Mask 使用完整 `0b...` 二进制形式显示，并按当前 MSAA sample 数补齐位数。
+- sample 点显示编号，方便对照 coverage mask bit 位。
 - MSAA > 1x 时，光栅化像素可显示 resolve 后的颜色结果。
 
 ### Top View（俯视光栅视图）
-- 显示 screen 平面、tile 网格、三角形边框、顶点、光栅化像素和 MSAA sample 点。
+- 显示 screen 平面、tile 网格、三角形边框、顶点、光栅化像素和右上角 MSAA sample pattern 预览框。
 - 显示 Screen / Depth Surface / Render Target / Clip / Scissor 等不同边界。
 - 支持 tile index 显示，例如 `(tile_x, tile_y)`。
 - 支持 tile 边界上的像素坐标刻度。
@@ -81,7 +78,7 @@ python main.py
 - 支持 Free Drag 开关，开启后可用鼠标自由旋转，默认关闭以避免误操作。
 - 支持正交投影，减少透视变形，便于对齐 screen 平面。
 - 支持右下角独立 X/Y/Z 坐标轴指示器，不遮挡 screen 内容。
-- 支持 screen 平面底板、tile 网格、tile index、tile 坐标轴、pixel grid、clip、scissor、Depth Surface、RT Surface、raster pixels、MSAA samples、coverage mask、sample pattern 预览。
+- 支持 screen 平面底板、tile 网格、tile index、tile 坐标轴、pixel grid、clip、scissor、Depth Surface、RT Surface、raster pixels 和右上角 MSAA sample pattern 预览。
 - 非正方形 screen 使用统一比例归一化，保证 3D View 中 pixel 不被拉伸。
 - 3D 像素坐标会按当前格子显示空间裁剪，放不下时自动隐藏，避免挤出格子。
 - 滚轮缩放以鼠标当前位置为锚点，和 Top View 一样保持鼠标下的内容位置稳定。
@@ -93,13 +90,13 @@ python main.py
 - **Tile Axes**: 显示或隐藏 tile 边界像素坐标刻度。
 - **Pixel Grid**: 显示或隐藏 pixel grid 和 pixel 坐标。
 - **Vtx Labels**: 显示或隐藏顶点坐标标签。
-- **Cov Mask**: 显示或隐藏 MSAA coverage mask。
+- **Cov Mask**: 控制右上角 MSAA sample pattern 中选中像素的 coverage mask 显示。
 - **Scissor**: 显示或隐藏 scissor rect。
 - **Clip**: 显示或隐藏 clip region。
 - **Depth Surf**: 显示或隐藏 depth surface size 边界。
 - **RT Surf**: 显示或隐藏 render target size 边界。
 - **Pixels**: 显示或隐藏光栅化像素/resolve 像素。
-- **MSAA**: 显示或隐藏 MSAA sample 点和 sample pattern 预览。
+- **MSAA**: 显示或隐藏右上角 MSAA sample pattern 预览框。
 - **3D Grid**: 显示或隐藏 3D View 的网格层。
 - **3D Axes**: 显示或隐藏 3D View 右下角坐标轴。
 - **Free Drag**: 控制 3D View 是否允许鼠标自由拖拽旋转。
@@ -126,7 +123,7 @@ python main.py
 ### 性能优化
 - Top View 的光栅化像素使用 QImage 缓存一次性绘制，避免每帧逐像素 drawRect。
 - 3D View 在 Top 模式下的 raster pixels 也使用 QImage 缓存绘制。
-- 高缩放下只绘制当前可见 screen 范围内的 pixel grid、坐标标签和 MSAA sample 点。
+- 高缩放下只绘制当前可见 screen 范围内的 pixel grid 和坐标标签，MSAA sample 只保留右上角预览框，避免逐像素重复绘制。
 - 非 Top 旋转视角限制高成本逐像素/MSAA 绘制数量，减少卡顿。
 - 低缩放时关闭部分抗锯齿以提升绘制性能。
 
@@ -161,6 +158,11 @@ python main.py
 ```
 
 ## 版本日志
+
+### v1.0.1 (2026-04-24)
+- MSAA 显示简化为只在右上角 sample pattern 预览框展示，不再在每个 pixel 内重复绘制 sample 点和 coverage mask
+- 点击 Top View 或 3D View 的像素后，右上角预览框继续用红色/黑色显示选中像素 sample 命中状态，并显示 coverage mask
+- README 同步更新 MSAA、Top View、3D View、显示开关和性能优化说明
 
 ### v1.0.0 (2026-04-24)
 - 发布 1.0.0：完成配置可视化、三角形编辑、软件光栅化、MSAA、Top/Depth/3D 视图、Popout、滚动条导航和性能优化等核心功能

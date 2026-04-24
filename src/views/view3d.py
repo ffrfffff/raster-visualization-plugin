@@ -494,50 +494,9 @@ class View3D(QWidget):
         painter.drawText(int(avg_sx + 12), int(avg_sy - 12), f"T{index}")
 
     def _draw_msaa_samples(self, painter: QPainter):
-        if not self.rasterized_results or not self.config:
-            self._draw_msaa_pattern_legend(painter, generate_msaa_sample_positions(self.config.msaa), self._selected_msaa_mask())
+        if not self.config:
             return
-
         msaa_positions = generate_msaa_sample_positions(self.config.msaa)
-        pixel_size = self._projected_pixel_size()
-        marker_size = max(4.0, min(10.0, pixel_size * 0.45))
-        label_samples = pixel_size >= 10.0
-        min_x, min_y, max_x, max_y = self._visible_screen_bounds()
-        drawn_pixels = 0
-        max_drawn_pixels = 1200 if self._is_flat_top_view() else 700
-
-        for result in self.rasterized_results:
-            tri_color = QColor(result.triangle.color[0], result.triangle.color[1], result.triangle.color[2])
-            for px, py in result.covered_pixels:
-                if not (min_x <= px < max_x and min_y <= py < max_y):
-                    continue
-                if drawn_pixels >= max_drawn_pixels:
-                    self._draw_msaa_pattern_legend(painter, msaa_positions, self._selected_msaa_mask())
-                    return
-                coverage = result.coverage_mask.get((px, py), 0)
-                for sample_idx, (sx, sy) in enumerate(msaa_positions):
-                    covered = (coverage >> sample_idx) & 1
-                    cx, cy = self._project(px + sx, py + sy, 0.025)
-                    if covered:
-                        painter.setBrush(QBrush(tri_color.lighter(130)))
-                        painter.setPen(QPen(QColor(255, 255, 255), 1))
-                    else:
-                        painter.setBrush(QBrush(QColor(25, 25, 25, 190)))
-                        painter.setPen(QPen(QColor(190, 190, 190), 1))
-                    painter.drawEllipse(int(cx - marker_size / 2), int(cy - marker_size / 2), int(marker_size), int(marker_size))
-
-                    if label_samples:
-                        painter.setFont(QFont("Consolas", 7))
-                        painter.setPen(QPen(QColor(255, 255, 255) if covered else QColor(210, 210, 210)))
-                        painter.drawText(int(cx + marker_size / 2 + 1), int(cy - marker_size / 2 - 1), str(sample_idx))
-
-                if self.show_coverage_mask and pixel_size >= 7.0:
-                    tx, ty = self._project(px + 0.05, py + 0.95, 0.03)
-                    painter.setPen(QPen(QColor(255, 255, 200)))
-                    painter.setFont(QFont("Consolas", 7))
-                    painter.drawText(int(tx), int(ty), f"0b{coverage:0{self.config.msaa}b}")
-                drawn_pixels += 1
-
         self._draw_msaa_pattern_legend(painter, msaa_positions, self._selected_msaa_mask())
 
     def _draw_screen_border(self, painter: QPainter):

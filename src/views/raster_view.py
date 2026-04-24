@@ -311,58 +311,9 @@ class RasterView(QWidget):
                     painter.setPen(QPen(color))
                     painter.drawText(vx + 8, vy - 6, f"V{vi}({v[0]:.0f},{v[1]:.0f},z={v[2]:.2f})")
 
-        # ---- MSAA 采样点 + sample pattern 预览 ----
+        # ---- MSAA sample pattern 预览 ----
         if self.show_msaa_samples and self.config:
             msaa_positions = generate_msaa_sample_positions(self.config.msaa)
-
-            if self.rasterized_results and scale >= 3.0:
-                vis_min_x = max(0, int(-ox / scale))
-                vis_min_y = max(0, int(-oy / scale))
-                vis_max_x = min(sw, int((self.width() - ox) / scale) + 1)
-                vis_max_y = min(sh, int((self.height() - oy) / scale) + 1)
-
-                marker_size = max(4.0, min(10.0, scale * 0.32))
-                label_samples = scale >= 12.0
-
-                for result in self.rasterized_results:
-                    tri_color = QColor(result.triangle.color[0], result.triangle.color[1], result.triangle.color[2])
-
-                    visible_pixels = [(px, py) for px, py in result.covered_pixels
-                                      if vis_min_x <= px < vis_max_x and vis_min_y <= py < vis_max_y]
-
-                    for px, py in visible_pixels:
-                        coverage = result.coverage_mask.get((px, py), 0)
-
-                        for sample_idx, (sx, sy) in enumerate(msaa_positions):
-                            is_covered = (coverage >> sample_idx) & 1
-
-                            cx = ox + (px + sx) * scale
-                            cy = oy + (py + sy) * scale
-                            r = marker_size
-
-                            if is_covered:
-                                painter.setBrush(QBrush(tri_color.lighter(125)))
-                                painter.setPen(QPen(QColor(255, 255, 255), 1))
-                            else:
-                                painter.setBrush(QBrush(QColor(25, 25, 25, 180)))
-                                painter.setPen(QPen(QColor(180, 180, 180), 1))
-                            painter.drawEllipse(int(cx - r / 2), int(cy - r / 2), int(r), int(r))
-
-                            if label_samples:
-                                painter.setFont(QFont("Consolas", max(6, min(9, int(scale / 5)))))
-                                painter.setPen(QPen(QColor(255, 255, 255) if is_covered else QColor(210, 210, 210)))
-                                painter.drawText(int(cx + r / 2 + 1), int(cy - r / 2 - 1), str(sample_idx))
-
-                        if self.show_coverage_mask and scale >= 8.0:
-                            painter.setPen(QPen(QColor(255, 255, 200)))
-                            painter.setFont(QFont("Consolas", max(6, min(9, int(scale / 4)))))
-                            mask_text = f"0b{coverage:0{self.config.msaa}b}"
-                            painter.drawText(
-                                int(ox + (px + 0.05) * scale),
-                                int(oy + (py + 0.95) * scale),
-                                mask_text
-                            )
-
             self._draw_msaa_pattern_legend(painter, msaa_positions, self._selected_msaa_mask())
 
         # ---- 屏幕边框 ----
