@@ -68,6 +68,13 @@ python main.py
 
 ## 版本日志
 
+### v0.3.0 (2026-04-24)
+- 性能优化：光栅化像素使用 QImage 缓存一次性绘制，替代逐像素 drawRect
+- MSAA > 1x 时自动使用 resolve 图（按 coverage 混合颜色），视觉上体现抗锯齿差异
+- MSAA 采样点绘制仅在高缩放(>=4x)时启用，且只绘制可见像素
+- 低缩放时关闭 QPainter 抗锯齿提升性能
+- 状态栏显示 MSAA 边缘像素数量
+
 ### v0.2.0 (2026-04-23)
 - 修正 MSAA 实现：使用标准旋转网格（Rotated Grid）采样位置
 - 新增 Coverage Mask 可视化：被覆盖/未覆盖的 sample 用不同形状和颜色标注
