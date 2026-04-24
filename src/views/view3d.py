@@ -116,24 +116,45 @@ class View3D(QWidget):
         painter.drawPolygon(polygon)
 
     def _draw_axes(self, painter: QPainter):
-        sw = self.config.screen_width
-        sh = self.config.screen_height
-        origin = self._project(sw / 2, sh / 2, 0)
-        axis_len = 0.5
+        origin = (self.width() - 82, self.height() - 62)
+        axis_len = 34
 
         axes = [
-            ("X", QColor(255, 95, 95), self._project(sw / 2 + sw * axis_len / 2, sh / 2, 0)),
-            ("Y", QColor(90, 230, 120), self._project(sw / 2, sh / 2 - sh * axis_len / 2, 0)),
-            ("Z", QColor(95, 145, 255), self._project(sw / 2, sh / 2, axis_len)),
+            ("X", QColor(255, 95, 95), self._transform_axis(1, 0, 0, axis_len)),
+            ("Y", QColor(90, 230, 120), self._transform_axis(0, 1, 0, axis_len)),
+            ("Z", QColor(95, 145, 255), self._transform_axis(0, 0, 1, axis_len)),
         ]
 
+        painter.setBrush(QBrush(QColor(20, 22, 28, 180)))
+        painter.setPen(QPen(QColor(110, 120, 145), 1))
+        painter.drawRoundedRect(self.width() - 128, self.height() - 118, 112, 102, 6, 6)
+
         painter.setFont(QFont("Arial", 10, QFont.Weight.Bold))
-        for label, color, end in axes:
+        for label, color, (dx, dy) in axes:
+            end_x = origin[0] + dx
+            end_y = origin[1] + dy
             painter.setPen(QPen(color, 3))
-            painter.drawLine(int(origin[0]), int(origin[1]), int(end[0]), int(end[1]))
+            painter.drawLine(int(origin[0]), int(origin[1]), int(end_x), int(end_y))
             painter.setBrush(QBrush(color))
-            painter.drawEllipse(int(end[0] - 4), int(end[1] - 4), 8, 8)
-            painter.drawText(int(end[0]) + 7, int(end[1]) - 7, label)
+            painter.drawEllipse(int(end_x - 4), int(end_y - 4), 8, 8)
+            painter.drawText(int(end_x) + 6, int(end_y) - 6, label)
+
+        painter.setBrush(QBrush(QColor(230, 230, 235)))
+        painter.setPen(Qt.PenStyle.NoPen)
+        painter.drawEllipse(int(origin[0] - 3), int(origin[1] - 3), 6, 6)
+
+    def _transform_axis(self, x: float, y: float, z: float, axis_len: float) -> Tuple[float, float]:
+        rad_x = math.radians(self.rot_x)
+        rad_y = math.radians(self.rot_y)
+
+        x1 = x * math.cos(rad_y) - z * math.sin(rad_y)
+        z1 = x * math.sin(rad_y) + z * math.cos(rad_y)
+        y1 = y
+
+        y2 = y1 * math.cos(rad_x) - z1 * math.sin(rad_x)
+        x2 = x1
+
+        return (x2 * axis_len, -y2 * axis_len)
 
     def _draw_grid(self, painter: QPainter):
         sw = self.config.screen_width
