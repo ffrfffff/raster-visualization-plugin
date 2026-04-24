@@ -27,7 +27,7 @@ python main.py
 ### 视图
 - **Top View**: 俯视图，显示 tile 网格、scissor/clip 区域、光栅化像素、顶点坐标
 - **Depth Side View**: 深度侧视图（X轴=屏幕坐标，Y轴=深度[-1,1]）
-- **3D View**: 可旋转3D视图，支持 Front/Back/Left/Right/Top/Perspective 预设模式
+- **3D View**: 正交工程视图，支持 Front/Back/Left/Right/Top/Bottom/ISO 固定视角、Yaw/Pitch 步进旋转和可选 Free Drag
 
 ### 坐标格式
 - X/Y: Q16.8 定点数（16位整数 + 8位小数）
@@ -67,6 +67,14 @@ python main.py
 ```
 
 ## 版本日志
+
+### v0.4.0 (2026-04-24)
+- 3D 视图改为默认正交投影，减少透视变形，固定视角更稳定
+- 优化 3D 外观：增加屏幕平面底板、半透明网格、顶点到基准面的深度辅助线
+- 新增 Bottom / ISO 固定视角，并保留 Front/Back/Left/Right/Top
+- 新增 Yaw -15 / Yaw +15 / Pitch -15 / Pitch +15 按钮，用于水平/纵向步进旋转
+- 新增 Free Drag 开关：默认关闭自由拖拽，避免误操作导致视角难以找回
+- 3D Popout 继承当前主视图的视角、缩放和 Free Drag 设置
 
 ### v0.3.0 (2026-04-24)
 - 性能优化：光栅化像素使用 QImage 缓存一次性绘制，替代逐像素 drawRect

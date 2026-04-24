@@ -140,23 +140,38 @@ class MainWindow(QMainWindow):
 
         # 第二行：3D 视图模式 + 开关
         options_layout2 = QHBoxLayout()
-        options_layout2.addWidget(QLabel("3D:"))
+        options_layout2.addWidget(QLabel("3D View:"))
         self.view3d_front_btn = QPushButton("Front")
         self.view3d_back_btn = QPushButton("Back")
         self.view3d_left_btn = QPushButton("Left")
         self.view3d_right_btn = QPushButton("Right")
         self.view3d_top_btn = QPushButton("Top")
-        self.view3d_persp_btn = QPushButton("Persp")
+        self.view3d_bottom_btn = QPushButton("Bottom")
+        self.view3d_persp_btn = QPushButton("ISO")
         for btn in [self.view3d_front_btn, self.view3d_back_btn, self.view3d_left_btn,
-                     self.view3d_right_btn, self.view3d_top_btn, self.view3d_persp_btn]:
-            btn.setFixedWidth(42)
+                     self.view3d_right_btn, self.view3d_top_btn, self.view3d_bottom_btn,
+                     self.view3d_persp_btn]:
+            btn.setFixedWidth(52)
+            options_layout2.addWidget(btn)
+
+        options_layout2.addWidget(QLabel("| Rotate:"))
+        self.view3d_yaw_left_btn = QPushButton("Yaw -15")
+        self.view3d_yaw_right_btn = QPushButton("Yaw +15")
+        self.view3d_pitch_down_btn = QPushButton("Pitch -15")
+        self.view3d_pitch_up_btn = QPushButton("Pitch +15")
+        for btn in [self.view3d_yaw_left_btn, self.view3d_yaw_right_btn,
+                     self.view3d_pitch_down_btn, self.view3d_pitch_up_btn]:
+            btn.setFixedWidth(70)
             options_layout2.addWidget(btn)
 
         options_layout2.addWidget(QLabel("|"))
+        self.free_rotate3d_cb = QCheckBox("Free Drag")
+        self.free_rotate3d_cb.setChecked(False)
         self.show_grid3d_cb = QCheckBox("3D Grid")
         self.show_grid3d_cb.setChecked(True)
         self.show_axes3d_cb = QCheckBox("3D Axes")
         self.show_axes3d_cb.setChecked(True)
+        options_layout2.addWidget(self.free_rotate3d_cb)
         options_layout2.addWidget(self.show_grid3d_cb)
         options_layout2.addWidget(self.show_axes3d_cb)
         options_layout2.addStretch()
@@ -216,6 +231,7 @@ class MainWindow(QMainWindow):
         self.show_clip_cb.toggled.connect(self.raster_view.toggle_clip)
         self.show_pixels_cb.toggled.connect(self.raster_view.toggle_raster_pixels)
         self.show_msaa_cb.toggled.connect(self.raster_view.toggle_msaa_samples)
+        self.free_rotate3d_cb.toggled.connect(self.view3d.set_free_rotate)
         self.show_grid3d_cb.toggled.connect(lambda v: setattr(self.view3d, 'show_grid', v) or self.view3d.update())
         self.show_axes3d_cb.toggled.connect(lambda v: setattr(self.view3d, 'show_axes', v) or self.view3d.update())
 
@@ -224,7 +240,12 @@ class MainWindow(QMainWindow):
         self.view3d_left_btn.clicked.connect(self.view3d.set_view_left)
         self.view3d_right_btn.clicked.connect(self.view3d.set_view_right)
         self.view3d_top_btn.clicked.connect(self.view3d.set_view_top)
+        self.view3d_bottom_btn.clicked.connect(self.view3d.set_view_bottom)
         self.view3d_persp_btn.clicked.connect(self.view3d.set_view_perspective)
+        self.view3d_yaw_left_btn.clicked.connect(lambda: self.view3d.rotate_horizontal(-15))
+        self.view3d_yaw_right_btn.clicked.connect(lambda: self.view3d.rotate_horizontal(15))
+        self.view3d_pitch_down_btn.clicked.connect(lambda: self.view3d.rotate_vertical(-15))
+        self.view3d_pitch_up_btn.clicked.connect(lambda: self.view3d.rotate_vertical(15))
 
         self.zoom_in_btn.clicked.connect(self.raster_view.zoom_in)
         self.zoom_out_btn.clicked.connect(self.raster_view.zoom_out)
@@ -328,6 +349,10 @@ class MainWindow(QMainWindow):
             view.set_triangles(self.triangle_model.triangles)
             view.show_grid = self.show_grid3d_cb.isChecked()
             view.show_axes = self.show_axes3d_cb.isChecked()
+            view.set_free_rotate(self.free_rotate3d_cb.isChecked())
+            view.rot_x = self.view3d.rot_x
+            view.rot_y = self.view3d.rot_y
+            view.zoom = self.view3d.zoom
             title = "3D View - Popout"
         else:
             return
