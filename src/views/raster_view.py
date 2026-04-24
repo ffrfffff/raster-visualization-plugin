@@ -287,49 +287,59 @@ class RasterView(QWidget):
                     painter.setPen(QPen(color))
                     painter.drawText(vx + 8, vy - 6, f"V{vi}({v[0]:.0f},{v[1]:.0f},z={v[2]:.2f})")
 
-        # ---- MSAA 采样点 (仅高缩放时，仅可见像素) ----
-        if self.show_msaa_samples and self.rasterized_results and scale >= 4.0:
+        # ---- MSAA 采样点 + sample pattern 预览 ----
+        if self.show_msaa_samples and self.config:
             msaa_positions = generate_msaa_sample_positions(self.config.msaa)
-            vis_min_x = max(0, int(-ox / scale))
-            vis_min_y = max(0, int(-oy / scale))
-            vis_max_x = min(sw, int((self.width() - ox) / scale) + 1)
-            vis_max_y = min(sh, int((self.height() - oy) / scale) + 1)
 
-            for result in self.rasterized_results:
-                tri_color = QColor(result.triangle.color[0], result.triangle.color[1], result.triangle.color[2])
+            if self.rasterized_results and scale >= 3.0:
+                vis_min_x = max(0, int(-ox / scale))
+                vis_min_y = max(0, int(-oy / scale))
+                vis_max_x = min(sw, int((self.width() - ox) / scale) + 1)
+                vis_max_y = min(sh, int((self.height() - oy) / scale) + 1)
 
-                visible_pixels = [(px, py) for px, py in result.covered_pixels
-                                  if vis_min_x <= px < vis_max_x and vis_min_y <= py < vis_max_y]
+                marker_size = max(4.0, min(10.0, scale * 0.32))
+                label_samples = scale >= 12.0
 
-                for px, py in visible_pixels:
-                    coverage = result.coverage_mask.get((px, py), 0)
+                for result in self.rasterized_results:
+                    tri_color = QColor(result.triangle.color[0], result.triangle.color[1], result.triangle.color[2])
 
-                    for sample_idx, (sx, sy) in enumerate(msaa_positions):
-                        is_covered = (coverage >> sample_idx) & 1
+                    visible_pixels = [(px, py) for px, py in result.covered_pixels
+                                      if vis_min_x <= px < vis_max_x and vis_min_y <= py < vis_max_y]
 
-                        cx = ox + (px + sx) * scale
-                        cy = oy + (py + sy) * scale
-                        r = max(1, min(4, scale / 5))
+                    for px, py in visible_pixels:
+                        coverage = result.coverage_mask.get((px, py), 0)
 
-                        if is_covered:
-                            painter.setBrush(QBrush(tri_color))
-                            painter.setPen(Qt.PenStyle.NoPen)
-                            painter.drawRect(int(cx - r/2), int(cy - r/2), int(r), int(r))
-                        else:
-                            painter.setBrush(Qt.BrushStyle.NoBrush)
-                            painter.setPen(QPen(QColor(100, 100, 100), 1))
-                            painter.drawEllipse(int(cx - r/2), int(cy - r/2), int(r), int(r))
+                        for sample_idx, (sx, sy) in enumerate(msaa_positions):
+                            is_covered = (coverage >> sample_idx) & 1
 
-                    # coverage mask 标注
-                    if self.show_coverage_mask and scale >= 10.0:
-                        painter.setPen(QPen(QColor(255, 255, 200)))
-                        painter.setFont(QFont("Consolas", max(6, min(9, int(scale / 4)))))
-                        mask_text = f"{coverage:0{self.config.msaa.bit_length()}b}"
-                        painter.drawText(
-                            int(ox + (px + 0.5) * scale - len(mask_text) * 2.5),
-                            int(oy + (py + 0.9) * scale),
-                            mask_text
-                        )
+                            cx = ox + (px + sx) * scale
+                            cy = oy + (py + sy) * scale
+                            r = marker_size
+
+                            if is_covered:
+                                painter.setBrush(QBrush(tri_color.lighter(125)))
+                                painter.setPen(QPen(QColor(255, 255, 255), 1))
+                            else:
+                                painter.setBrush(QBrush(QColor(25, 25, 25, 180)))
+                                painter.setPen(QPen(QColor(180, 180, 180), 1))
+                            painter.drawEllipse(int(cx - r / 2), int(cy - r / 2), int(r), int(r))
+
+                            if label_samples:
+                                painter.setFont(QFont("Consolas", max(6, min(9, int(scale / 5)))))
+                                painter.setPen(QPen(QColor(255, 255, 255) if is_covered else QColor(210, 210, 210)))
+                                painter.drawText(int(cx + r / 2 + 1), int(cy - r / 2 - 1), str(sample_idx))
+
+                        if self.show_coverage_mask and scale >= 8.0:
+                            painter.setPen(QPen(QColor(255, 255, 200)))
+                            painter.setFont(QFont("Consolas", max(6, min(9, int(scale / 4)))))
+                            mask_text = f"0b{coverage:0{self.config.msaa}b}"
+                            painter.drawText(
+                                int(ox + (px + 0.05) * scale),
+                                int(oy + (py + 0.95) * scale),
+                                mask_text
+                            )
+
+            self._draw_msaa_pattern_legend(painter, msaa_positions)
 
         # ---- 屏幕边框 ----
         painter.setPen(QPen(QColor(150, 150, 150), 2))
@@ -356,6 +366,37 @@ class RasterView(QWidget):
             total_pixels = sum(len(r.covered_pixels) for r in self.rasterized_results)
             info_text += f" | Pixels: {total_pixels}"
         painter.drawText(10, self.height() - 8, info_text)
+
+    def _draw_msaa_pattern_legend(self, painter: QPainter, msaa_positions: list):
+        legend_size = 112
+        margin = 12
+        x0 = self.width() - legend_size - margin
+        y0 = margin
+
+        painter.setBrush(QBrush(QColor(20, 22, 28, 220)))
+        painter.setPen(QPen(QColor(150, 160, 180), 1))
+        painter.drawRect(x0, y0, legend_size, legend_size + 28)
+
+        painter.setPen(QPen(QColor(235, 235, 235)))
+        painter.setFont(QFont("Consolas", 9, QFont.Weight.Bold))
+        painter.drawText(x0 + 8, y0 + 17, f"{self.config.msaa}x MSAA samples")
+
+        cell_x = x0 + 18
+        cell_y = y0 + 30
+        cell_size = 76
+        painter.setBrush(QBrush(QColor(45, 48, 58)))
+        painter.setPen(QPen(QColor(110, 120, 140), 1))
+        painter.drawRect(cell_x, cell_y, cell_size, cell_size)
+
+        for idx, (sx, sy) in enumerate(msaa_positions):
+            px = cell_x + sx * cell_size
+            py = cell_y + sy * cell_size
+            painter.setBrush(QBrush(QColor(255, 210, 90)))
+            painter.setPen(QPen(QColor(30, 30, 30), 1))
+            painter.drawEllipse(int(px - 4), int(py - 4), 8, 8)
+            painter.setPen(QPen(QColor(255, 255, 255)))
+            painter.setFont(QFont("Consolas", 8))
+            painter.drawText(int(px + 6), int(py - 5), str(idx))
 
     def wheelEvent(self, event):
         mouse_pos = event.position()

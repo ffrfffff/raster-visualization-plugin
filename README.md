@@ -68,6 +68,12 @@ python main.py
 
 ## 版本日志
 
+### v0.6.0 (2026-04-24)
+- 修复 MSAA 采样点可视化不明显的问题：高缩放下每个被覆盖 pixel 会显示完整 sample pattern，而不是只看到单个覆盖点
+- MSAA sample 点使用圆点和编号区分，覆盖/未覆盖 sample 使用不同填充样式
+- 新增右上角 MSAA sample pattern 预览框，切换 2x/4x/8x/16x 时可直接观察采样点分布变化
+- Coverage mask 显示改为完整 `0b...` 二进制形式，并按当前 MSAA sample 数补齐位数
+
 ### v0.5.0 (2026-04-24)
 - 新增项目级 Claude Code Stop hook：当项目文件有改动但 README 版本日志未更新时，结束前阻止并提醒补充版本日志
 - Hook 会在存在未推送提交时提醒先执行 git push，避免改动只停留在本地
