@@ -1,9 +1,9 @@
 """3D 可旋转视图"""
 import math
 from PyQt6.QtWidgets import QWidget, QToolTip
-from PyQt6.QtCore import Qt, QPointF
-from PyQt6.QtGui import QPainter, QPen, QColor, QBrush, QFont, QPolygonF, QFontMetrics
-from typing import Dict, List, Optional, Tuple
+from PyQt6.QtCore import Qt, QPointF, QRect
+from PyQt6.QtGui import QPainter, QPen, QColor, QBrush, QFont, QPolygonF, QFontMetrics, QImage
+from typing import List, Optional, Tuple
 from ..models.config import RasterConfig
 from ..models.triangle import Triangle, RasterizedTriangle
 from ..renderers.software_rasterizer import SoftwareRasterizer
@@ -30,6 +30,9 @@ class View3D(QWidget):
         self.free_rotate = False
 
         self._last_pos = None
+        self._pixel_image: Optional[QImage] = None
+        self._pixel_image_msaa: Optional[QImage] = None
+        self._pixel_image_dirty = True
 
         self.show_axes = True
         self.show_grid = True
@@ -50,16 +53,75 @@ class View3D(QWidget):
     def set_config(self, config: RasterConfig):
         self.config = config
         self.rasterizer = SoftwareRasterizer(config)
+        self._pixel_image_dirty = True
         self.update()
 
     def set_triangles(self, triangles: List[Triangle], rasterized: Optional[List[RasterizedTriangle]] = None):
         self.triangles = triangles
         self.rasterized_results = rasterized or []
+        self._pixel_image_dirty = True
         self.update()
 
     def set_rasterized_results(self, rasterized: List[RasterizedTriangle]):
         self.rasterized_results = rasterized
+        self._pixel_image_dirty = True
         self.update()
+
+    def _is_flat_top_view(self) -> bool:
+        return all(abs(v) < 0.001 for v in (self.rot_x, self.rot_y, self.rot_z))
+
+    def _screen_to_top_view_rect(self) -> QRect:
+        sw = self.config.screen_width
+        sh = self.config.screen_height
+        p0 = self._project(0, 0, 0)
+        p1 = self._project(sw, sh, 0)
+        x = min(p0[0], p1[0])
+        y = min(p0[1], p1[1])
+        w = abs(p1[0] - p0[0])
+        h = abs(p1[1] - p0[1])
+        return QRect(int(x), int(y), max(1, int(w)), max(1, int(h)))
+
+    def _visible_screen_bounds(self, pad: int = 2) -> Tuple[int, int, int, int]:
+        if not self.config or not self._is_flat_top_view():
+            return (0, 0, self.config.screen_width if self.config else 0, self.config.screen_height if self.config else 0)
+        top_left = self._screen_point_from_view(0, 0) or (0, 0)
+        bottom_right = self._screen_point_from_view(self.width(), self.height()) or (self.config.screen_width, self.config.screen_height)
+        min_x = max(0, int(math.floor(min(top_left[0], bottom_right[0]))) - pad)
+        min_y = max(0, int(math.floor(min(top_left[1], bottom_right[1]))) - pad)
+        max_x = min(self.config.screen_width, int(math.ceil(max(top_left[0], bottom_right[0]))) + pad)
+        max_y = min(self.config.screen_height, int(math.ceil(max(top_left[1], bottom_right[1]))) + pad)
+        return (min_x, min_y, max_x, max_y)
+
+    def _rebuild_pixel_image(self):
+        if not self.config or not self.rasterized_results:
+            self._pixel_image = None
+            self._pixel_image_msaa = None
+            self._pixel_image_dirty = False
+            return
+
+        sw = self.config.screen_width
+        sh = self.config.screen_height
+        img = QImage(sw, sh, QImage.Format.Format_ARGB32_Premultiplied)
+        img.fill(QColor(0, 0, 0, 0))
+
+        for result in self.rasterized_results:
+            color = result.triangle.color
+            for (px, py), ratio in result.coverage_ratio.items():
+                if 0 <= px < sw and 0 <= py < sh:
+                    img.setPixelColor(px, py, QColor(color[0], color[1], color[2], int(210 * ratio)))
+        self._pixel_image = img
+
+        if self.config.msaa > 1 and self.rasterizer:
+            img_msaa = QImage(sw, sh, QImage.Format.Format_ARGB32_Premultiplied)
+            img_msaa.fill(QColor(0, 0, 0, 0))
+            for (px, py), (r, g, b) in self.rasterizer.resolve_msaa(self.rasterized_results).items():
+                if 0 <= px < sw and 0 <= py < sh:
+                    img_msaa.setPixelColor(px, py, QColor(r, g, b, 205))
+            self._pixel_image_msaa = img_msaa
+        else:
+            self._pixel_image_msaa = None
+
+        self._pixel_image_dirty = False
 
     def _normalize(self, x: float, y: float, z: float) -> Tuple[float, float, float]:
         if not self.config:
@@ -214,13 +276,24 @@ class View3D(QWidget):
         if not self.rasterized_results:
             return
 
+        if self._is_flat_top_view():
+            if self._pixel_image_dirty:
+                self._rebuild_pixel_image()
+            draw_img = self._pixel_image_msaa if (self.config.msaa > 1 and self._pixel_image_msaa) else self._pixel_image
+            if draw_img:
+                painter.drawImage(self._screen_to_top_view_rect(), draw_img)
+            return
+
+        min_x, min_y, max_x, max_y = self._visible_screen_bounds()
         total_pixels = sum(len(result.covered_pixels) for result in self.rasterized_results)
-        step = max(1, total_pixels // 35000)
+        step = max(1, total_pixels // 18000)
         counter = 0
 
         if self.config.msaa > 1 and self.rasterizer:
             resolved = self.rasterizer.resolve_msaa(self.rasterized_results)
             for (px, py), (r, g, b) in resolved.items():
+                if not (min_x <= px < max_x and min_y <= py < max_y):
+                    continue
                 counter += 1
                 if counter % step != 0:
                     continue
@@ -232,6 +305,8 @@ class View3D(QWidget):
         for result in self.rasterized_results:
             color = result.triangle.color
             for (px, py), ratio in result.coverage_ratio.items():
+                if not (min_x <= px < max_x and min_y <= py < max_y):
+                    continue
                 counter += 1
                 if counter % step != 0:
                     continue
@@ -296,13 +371,17 @@ class View3D(QWidget):
         if pixel_size < 4.0:
             return
 
-        sw = self.config.screen_width
-        sh = self.config.screen_height
+        min_x, min_y, max_x, max_y = self._visible_screen_bounds()
+        if not self._is_flat_top_view():
+            max_lines = 260
+            if (max_x - min_x) + (max_y - min_y) > max_lines:
+                return
+
         painter.setPen(QPen(QColor(48, 52, 65), 1))
-        for px in range(sw + 1):
-            self._draw_projected_line(painter, (px, 0, 0), (px, sh, 0))
-        for py in range(sh + 1):
-            self._draw_projected_line(painter, (0, py, 0), (sw, py, 0))
+        for px in range(min_x, max_x + 1):
+            self._draw_projected_line(painter, (px, min_y, 0), (px, max_y, 0))
+        for py in range(min_y, max_y + 1):
+            self._draw_projected_line(painter, (min_x, py, 0), (max_x, py, 0))
 
         if pixel_size < 10.0 or not self.rasterized_results:
             return
@@ -313,8 +392,10 @@ class View3D(QWidget):
         drawn = 0
         for result in self.rasterized_results:
             for px, py in result.covered_pixels:
-                if drawn >= 1800:
+                if drawn >= 800:
                     return
+                if not (min_x <= px < max_x and min_y <= py < max_y):
+                    continue
                 label = f"{px},{py}"
                 sx, sy = self._project(px + 0.5, py + 0.5, 0)
                 painter.drawText(int(sx - fm.horizontalAdvance(label) / 2), int(sy + fm.height() / 3), label)
@@ -384,12 +465,16 @@ class View3D(QWidget):
         pixel_size = self._projected_pixel_size()
         marker_size = max(4.0, min(10.0, pixel_size * 0.45))
         label_samples = pixel_size >= 10.0
+        min_x, min_y, max_x, max_y = self._visible_screen_bounds()
         drawn_pixels = 0
+        max_drawn_pixels = 1200 if self._is_flat_top_view() else 700
 
         for result in self.rasterized_results:
             tri_color = QColor(result.triangle.color[0], result.triangle.color[1], result.triangle.color[2])
             for px, py in result.covered_pixels:
-                if drawn_pixels >= 2500:
+                if not (min_x <= px < max_x and min_y <= py < max_y):
+                    continue
+                if drawn_pixels >= max_drawn_pixels:
                     self._draw_msaa_pattern_legend(painter, msaa_positions)
                     return
                 coverage = result.coverage_mask.get((px, py), 0)

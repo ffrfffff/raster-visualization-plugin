@@ -70,6 +70,11 @@ python main.py
 
 ## 版本日志
 
+### v0.11.0 (2026-04-24)
+- 优化 3D View 放大后的绘制性能：Top 模式 raster pixels 改用 QImage 缓存一次性绘制，避免每帧逐像素投影多边形
+- 3D View 的 pixel grid、pixel 坐标标签和 MSAA sample 点改为按当前可见 screen 范围裁剪绘制
+- 限制非 Top 旋转视角下的高成本逐像素/MSAA 绘制数量，降低放大和弹出窗口场景下的卡顿
+
 ### v0.10.0 (2026-04-24)
 - 3D View 升级为 Combined Raster 3D View：在 3D screen 平面中叠加俯视图的 raster debug 信息
 - 3D View 新增 rasterized pixels / MSAA resolve pixels 绘制，可在旋转视角下观察像素覆盖结果
