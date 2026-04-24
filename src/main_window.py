@@ -133,8 +133,6 @@ class MainWindow(QMainWindow):
         self.show_pixel_coords_cb.setChecked(True)
         self.show_vertex_labels_cb = QCheckBox("Vtx Labels")
         self.show_vertex_labels_cb.setChecked(True)
-        self.show_coverage_mask_cb = QCheckBox("Cov Mask")
-        self.show_coverage_mask_cb.setChecked(True)
         self.show_scissor_cb = QCheckBox("Scissor")
         self.show_scissor_cb.setChecked(True)
         self.show_clip_cb = QCheckBox("Clip")
@@ -145,21 +143,17 @@ class MainWindow(QMainWindow):
         self.show_rt_surface_cb.setChecked(True)
         self.show_pixels_cb = QCheckBox("Pixels")
         self.show_pixels_cb.setChecked(True)
-        self.show_msaa_cb = QCheckBox("MSAA")
-        self.show_msaa_cb.setChecked(False)
 
         options_layout.addWidget(self.show_tiles_cb)
         options_layout.addWidget(self.show_tile_labels_cb)
         options_layout.addWidget(self.show_tile_axes_cb)
         options_layout.addWidget(self.show_pixel_coords_cb)
         options_layout.addWidget(self.show_vertex_labels_cb)
-        options_layout.addWidget(self.show_coverage_mask_cb)
         options_layout.addWidget(self.show_scissor_cb)
         options_layout.addWidget(self.show_clip_cb)
         options_layout.addWidget(self.show_depth_surface_cb)
         options_layout.addWidget(self.show_rt_surface_cb)
         options_layout.addWidget(self.show_pixels_cb)
-        options_layout.addWidget(self.show_msaa_cb)
 
         options_layout.addWidget(QLabel("|"))
         self.zoom_in_btn = QPushButton("+")
@@ -278,7 +272,6 @@ class MainWindow(QMainWindow):
         toolbar.addAction("Clear All", self._on_clear_triangles)
 
     def _connect_signals(self):
-        self.config_panel.config_changed.connect(self._on_config_changed)
         self.config_model.config_changed.connect(self._on_config_changed)
 
         self.triangle_model.triangles_changed.connect(self._on_triangles_changed)
@@ -291,13 +284,11 @@ class MainWindow(QMainWindow):
         self.show_tile_axes_cb.toggled.connect(lambda checked: self._toggle_raster_layer('tile_pixel_axes', checked))
         self.show_pixel_coords_cb.toggled.connect(lambda checked: self._toggle_raster_layer('pixel_coords', checked))
         self.show_vertex_labels_cb.toggled.connect(lambda checked: self._toggle_raster_layer('vertex_labels', checked))
-        self.show_coverage_mask_cb.toggled.connect(lambda checked: self._toggle_raster_layer('coverage_mask', checked))
         self.show_scissor_cb.toggled.connect(lambda checked: self._toggle_raster_layer('scissor', checked))
         self.show_clip_cb.toggled.connect(lambda checked: self._toggle_raster_layer('clip', checked))
         self.show_depth_surface_cb.toggled.connect(lambda checked: self._toggle_raster_layer('depth_surface', checked))
         self.show_rt_surface_cb.toggled.connect(lambda checked: self._toggle_raster_layer('rt_surface', checked))
         self.show_pixels_cb.toggled.connect(lambda checked: self._toggle_raster_layer('raster_pixels', checked))
-        self.show_msaa_cb.toggled.connect(lambda checked: self._toggle_raster_layer('msaa_samples', checked))
         self.free_rotate3d_cb.toggled.connect(lambda checked: self.view3d.set_free_rotate(checked) or self._sync_popout_views())
         self.show_grid3d_cb.toggled.connect(lambda v: setattr(self.view3d, 'show_grid', v) or self.view3d.update() or self._sync_popout_views())
         self.show_axes3d_cb.toggled.connect(lambda v: setattr(self.view3d, 'show_axes', v) or self.view3d.update() or self._sync_popout_views())
@@ -425,10 +416,10 @@ class MainWindow(QMainWindow):
         triangles = self.triangle_model.triangles
         results = self.rasterizer.rasterize_triangles(triangles)
 
-        self.raster_view.set_triangles(triangles)
+        self.raster_view.set_triangles(triangles, results)
         self.view3d.set_triangles(triangles, results)
         self.depth_view.set_triangles(triangles, results)
-        self._sync_popout_views()
+        self._sync_popout_views(results)
 
         total_pixels = sum(len(r.covered_pixels) for r in results)
         depth_ranges = [t.depth_range for t in triangles]
@@ -483,20 +474,19 @@ class MainWindow(QMainWindow):
             ('show_depth_surface', self.show_depth_surface_cb),
             ('show_rt_surface', self.show_rt_surface_cb),
             ('show_raster_pixels', self.show_pixels_cb),
-            ('show_msaa_samples', self.show_msaa_cb),
             ('show_tile_labels', self.show_tile_labels_cb),
             ('show_pixel_coords', self.show_pixel_coords_cb),
             ('show_tile_pixel_axes', self.show_tile_axes_cb),
             ('show_vertex_labels', self.show_vertex_labels_cb),
-            ('show_coverage_mask', self.show_coverage_mask_cb),
         ]:
             if hasattr(view, attr):
                 setattr(view, attr, checkbox.isChecked())
         view.update()
 
-    def _sync_popout_views(self):
+    def _sync_popout_views(self, results=None):
         triangles = self.triangle_model.triangles
-        results = self.rasterizer.rasterize_triangles(triangles)
+        if results is None:
+            results = self.rasterizer.rasterize_triangles(triangles)
         live_entries = []
         for window, view_type in self._popout_entries:
             if window not in self._popout_windows:
@@ -504,7 +494,7 @@ class MainWindow(QMainWindow):
             view = window.view
             view.set_config(self.config_model.config)
             if view_type == 'top':
-                view.set_triangles(triangles)
+                view.set_triangles(triangles, results)
                 self._copy_raster_toggles_to_view(view)
             elif view_type == 'depth':
                 view.set_triangles(triangles, results)
@@ -524,7 +514,8 @@ class MainWindow(QMainWindow):
         if view_type == 'top':
             view = RasterView()
             view.set_config(self.config_model.config)
-            view.set_triangles(self.triangle_model.triangles)
+            results = self.rasterizer.rasterize_triangles(self.triangle_model.triangles)
+            view.set_triangles(self.triangle_model.triangles, results)
             self._copy_raster_toggles_to_view(view)
             title = "Top View (Raster) - Popout"
         elif view_type == 'depth':

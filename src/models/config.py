@@ -43,6 +43,33 @@ class RasterConfigModel(QObject):
     def config(self) -> RasterConfig:
         return self._config
 
+    def update_config(
+        self,
+        msaa: int,
+        screen_width: int,
+        screen_height: int,
+        depth_surface_width: int,
+        depth_surface_height: int,
+        rt_width: int,
+        rt_height: int,
+        clip_region: Tuple[int, int, int, int],
+        scissor: Tuple[int, int, int, int],
+        tile_width: int,
+        tile_height: int,
+    ):
+        self._config.msaa = msaa
+        self._config.screen_width = screen_width
+        self._config.screen_height = screen_height
+        self._config.depth_surface_width = depth_surface_width
+        self._config.depth_surface_height = depth_surface_height
+        self._config.rt_width = rt_width
+        self._config.rt_height = rt_height
+        self._config.clip_region = clip_region
+        self._config.scissor = scissor
+        self._config.tile_width = tile_width
+        self._config.tile_height = tile_height
+        self.config_changed.emit()
+
     def update_msaa(self, value: int):
         self._config.msaa = value
         self.config_changed.emit()

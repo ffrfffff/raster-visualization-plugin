@@ -27,7 +27,7 @@ class RasterView(QWidget):
         self.show_depth_surface = True
         self.show_rt_surface = True
         self.show_raster_pixels = True
-        self.show_msaa_samples = False
+        self.show_msaa_samples = True
         self.show_tile_labels = True
         self.show_pixel_coords = True
         self.show_tile_pixel_axes = True
@@ -50,13 +50,15 @@ class RasterView(QWidget):
         self.config = config
         self.rasterizer = SoftwareRasterizer(config)
         self._pixel_image_dirty = True
-        self._update_rasterization()
         self.update()
 
-    def set_triangles(self, triangles: List[Triangle]):
+    def set_triangles(self, triangles: List[Triangle], rasterized: Optional[List[RasterizedTriangle]] = None):
         self.triangles = triangles
-        self._pixel_image_dirty = True
-        self._update_rasterization()
+        if rasterized is None:
+            self._update_rasterization()
+        else:
+            self.rasterized_results = rasterized
+            self._pixel_image_dirty = True
         self.update()
 
     def _update_rasterization(self):

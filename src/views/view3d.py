@@ -43,7 +43,7 @@ class View3D(QWidget):
         self.show_depth_surface = True
         self.show_rt_surface = True
         self.show_raster_pixels = True
-        self.show_msaa_samples = False
+        self.show_msaa_samples = True
         self.show_tile_labels = True
         self.show_pixel_coords = True
         self.show_tile_pixel_axes = True

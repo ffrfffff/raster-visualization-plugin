@@ -43,14 +43,14 @@ python main.py
 ### MSAA 可视化
 - 支持 1x / 2x / 4x / 8x / 16x MSAA 切换。
 - MSAA 采样点使用旋转网格分布，便于观察不同 MSAA 模式下 sample 位置差异。
-- MSAA sample pattern 只在右上角预览框中显示，不再在每个 pixel 内重复绘制 sample 点和 coverage mask。
+- MSAA sample pattern 默认在右上角预览框中显示，不再在每个 pixel 内重复绘制 sample 点和 coverage mask。
 - 点击 Top View 或 3D View 中的像素后，右上角 MSAA sample pattern 会显示该像素各 sample 的命中状态。
 - 被选中像素的 sample 命中时显示红色，未命中时显示黑色，并显示对应 coverage mask。
 - sample 点显示编号，方便对照 coverage mask bit 位。
 - MSAA > 1x 时，光栅化像素可显示 resolve 后的颜色结果。
 
 ### Top View（俯视光栅视图）
-- 显示 screen 平面、tile 网格、三角形边框、顶点、光栅化像素和右上角 MSAA sample pattern 预览框。
+- 显示 screen 平面、tile 网格、三角形边框、顶点、光栅化像素和右上角默认开启的 MSAA sample pattern 预览框。
 - 显示 Screen / Depth Surface / Render Target / Clip / Scissor 等不同边界。
 - 支持 tile index 显示，例如 `(tile_x, tile_y)`。
 - 支持 tile 边界上的像素坐标刻度。
@@ -96,7 +96,6 @@ python main.py
 - **Depth Surf**: 显示或隐藏 depth surface size 边界。
 - **RT Surf**: 显示或隐藏 render target size 边界。
 - **Pixels**: 显示或隐藏光栅化像素/resolve 像素。
-- **MSAA**: 显示或隐藏右上角 MSAA sample pattern 预览框。
 - **3D Grid**: 显示或隐藏 3D View 的网格层。
 - **3D Axes**: 显示或隐藏 3D View 右下角坐标轴。
 - **Free Drag**: 控制 3D View 是否允许鼠标自由拖拽旋转。
@@ -123,7 +122,8 @@ python main.py
 ### 性能优化
 - Top View 的光栅化像素使用 QImage 缓存一次性绘制，避免每帧逐像素 drawRect。
 - 3D View 在 Top 模式下的 raster pixels 也使用 QImage 缓存绘制。
-- 高缩放下只绘制当前可见 screen 范围内的 pixel grid 和坐标标签，MSAA sample 只保留右上角预览框，避免逐像素重复绘制。
+- 高缩放下只绘制当前可见 screen 范围内的 pixel grid 和坐标标签，MSAA sample 只保留右上角默认预览框，避免逐像素重复绘制。
+- 配置 Apply 使用批量更新和单次刷新，Top View / 3D View / Popout 复用同一份光栅化结果，减少重复计算。
 - 非 Top 旋转视角限制高成本逐像素/MSAA 绘制数量，减少卡顿。
 - 低缩放时关闭部分抗锯齿以提升绘制性能。
 
@@ -158,6 +158,11 @@ python main.py
 ```
 
 ## 版本日志
+
+### v1.0.2 (2026-04-24)
+- 移除 GUI 中的 `Cov Mask` 和 `MSAA` 显示开关，右上角 MSAA sample pattern 预览框改为默认一直显示
+- 配置面板 Apply 改为批量更新配置，只触发一次主视图刷新，避免一次配置修改重复光栅化多次
+- Top View、3D View 和 Popout 同步复用同一份光栅化结果，减少配置修改和弹窗同步时的重复计算
 
 ### v1.0.1 (2026-04-24)
 - MSAA 显示简化为只在右上角 sample pattern 预览框展示，不再在每个 pixel 内重复绘制 sample 点和 coverage mask

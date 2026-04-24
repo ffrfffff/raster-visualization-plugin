@@ -164,37 +164,29 @@ class ConfigPanel(QWidget):
         msaa_values = [1, 2, 4, 8, 16]
         msaa = msaa_values[self.msaa_combo.currentIndex()]
 
-        self.config_model.update_msaa(msaa)
-        self.config_model.update_screen_size(
-            self.screen_width_spin.value(),
-            self.screen_height_spin.value()
+        self.config_model.update_config(
+            msaa=msaa,
+            screen_width=self.screen_width_spin.value(),
+            screen_height=self.screen_height_spin.value(),
+            depth_surface_width=self.depth_width_spin.value(),
+            depth_surface_height=self.depth_height_spin.value(),
+            rt_width=self.rt_width_spin.value(),
+            rt_height=self.rt_height_spin.value(),
+            clip_region=(
+                self.clip_x_spin.value(),
+                self.clip_y_spin.value(),
+                self.clip_w_spin.value(),
+                self.clip_h_spin.value()
+            ),
+            scissor=(
+                self.scissor_x_spin.value(),
+                self.scissor_y_spin.value(),
+                self.scissor_w_spin.value(),
+                self.scissor_h_spin.value()
+            ),
+            tile_width=self.tile_width_spin.value(),
+            tile_height=self.tile_height_spin.value(),
         )
-        self.config_model.update_depth_surface_size(
-            self.depth_width_spin.value(),
-            self.depth_height_spin.value()
-        )
-        self.config_model.update_rt_size(
-            self.rt_width_spin.value(),
-            self.rt_height_spin.value()
-        )
-        self.config_model.update_clip_region(
-            self.clip_x_spin.value(),
-            self.clip_y_spin.value(),
-            self.clip_w_spin.value(),
-            self.clip_h_spin.value()
-        )
-        self.config_model.update_scissor(
-            self.scissor_x_spin.value(),
-            self.scissor_y_spin.value(),
-            self.scissor_w_spin.value(),
-            self.scissor_h_spin.value()
-        )
-        self.config_model.update_tile_size(
-            self.tile_width_spin.value(),
-            self.tile_height_spin.value()
-        )
-
-        self.config_changed.emit()
 
     def sync_from_model(self):
         """从模型同步配置到 UI"""
