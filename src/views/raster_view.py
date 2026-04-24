@@ -24,6 +24,8 @@ class RasterView(QWidget):
         self.show_tiles = True
         self.show_scissor = True
         self.show_clip = True
+        self.show_depth_surface = True
+        self.show_rt_surface = True
         self.show_raster_pixels = True
         self.show_msaa_samples = False
         self.show_tile_labels = True
@@ -243,6 +245,27 @@ class RasterView(QWidget):
                                 sw2 = fm_coord.horizontalAdvance(short)
                                 if pixel_w > sw2 + 2:
                                     painter.drawText(int(cx - sw2 / 2), int(cy + label_h / 3), short)
+
+        # ---- Depth Surface / Render Target Surface ----
+        if self.show_depth_surface:
+            dw = self.config.depth_surface_width
+            dh = self.config.depth_surface_height
+            painter.setPen(QPen(QColor(80, 150, 255), 2, Qt.PenStyle.DashLine))
+            painter.setBrush(Qt.BrushStyle.NoBrush)
+            painter.drawRect(int(ox), int(oy), int(dw * scale), int(dh * scale))
+            painter.setFont(QFont("Arial", 8))
+            painter.setPen(QPen(QColor(120, 180, 255)))
+            painter.drawText(int(ox + 3), int(oy + dh * scale + 12), f"Depth Surf({dw}x{dh})")
+
+        if self.show_rt_surface:
+            rw = self.config.rt_width
+            rh = self.config.rt_height
+            painter.setPen(QPen(QColor(210, 110, 255), 2, Qt.PenStyle.DashLine))
+            painter.setBrush(Qt.BrushStyle.NoBrush)
+            painter.drawRect(int(ox), int(oy), int(rw * scale), int(rh * scale))
+            painter.setFont(QFont("Arial", 8))
+            painter.setPen(QPen(QColor(230, 150, 255)))
+            painter.drawText(int(ox + 3), int(oy + rh * scale + 24), f"RT({rw}x{rh})")
 
         # ---- Clip Region ----
         if self.show_clip:
@@ -524,6 +547,14 @@ class RasterView(QWidget):
 
     def toggle_clip(self, show: bool):
         self.show_clip = show
+        self.update()
+
+    def toggle_depth_surface(self, show: bool):
+        self.show_depth_surface = show
+        self.update()
+
+    def toggle_rt_surface(self, show: bool):
+        self.show_rt_surface = show
         self.update()
 
     def toggle_raster_pixels(self, show: bool):

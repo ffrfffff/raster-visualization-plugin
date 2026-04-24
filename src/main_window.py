@@ -139,6 +139,10 @@ class MainWindow(QMainWindow):
         self.show_scissor_cb.setChecked(True)
         self.show_clip_cb = QCheckBox("Clip")
         self.show_clip_cb.setChecked(True)
+        self.show_depth_surface_cb = QCheckBox("Depth Surf")
+        self.show_depth_surface_cb.setChecked(True)
+        self.show_rt_surface_cb = QCheckBox("RT Surf")
+        self.show_rt_surface_cb.setChecked(True)
         self.show_pixels_cb = QCheckBox("Pixels")
         self.show_pixels_cb.setChecked(True)
         self.show_msaa_cb = QCheckBox("MSAA")
@@ -152,6 +156,8 @@ class MainWindow(QMainWindow):
         options_layout.addWidget(self.show_coverage_mask_cb)
         options_layout.addWidget(self.show_scissor_cb)
         options_layout.addWidget(self.show_clip_cb)
+        options_layout.addWidget(self.show_depth_surface_cb)
+        options_layout.addWidget(self.show_rt_surface_cb)
         options_layout.addWidget(self.show_pixels_cb)
         options_layout.addWidget(self.show_msaa_cb)
 
@@ -288,6 +294,8 @@ class MainWindow(QMainWindow):
         self.show_coverage_mask_cb.toggled.connect(lambda checked: self._toggle_raster_layer('coverage_mask', checked))
         self.show_scissor_cb.toggled.connect(lambda checked: self._toggle_raster_layer('scissor', checked))
         self.show_clip_cb.toggled.connect(lambda checked: self._toggle_raster_layer('clip', checked))
+        self.show_depth_surface_cb.toggled.connect(lambda checked: self._toggle_raster_layer('depth_surface', checked))
+        self.show_rt_surface_cb.toggled.connect(lambda checked: self._toggle_raster_layer('rt_surface', checked))
         self.show_pixels_cb.toggled.connect(lambda checked: self._toggle_raster_layer('raster_pixels', checked))
         self.show_msaa_cb.toggled.connect(lambda checked: self._toggle_raster_layer('msaa_samples', checked))
         self.free_rotate3d_cb.toggled.connect(lambda checked: self.view3d.set_free_rotate(checked) or self._sync_popout_views())
@@ -472,6 +480,8 @@ class MainWindow(QMainWindow):
             ('show_tiles', self.show_tiles_cb),
             ('show_scissor', self.show_scissor_cb),
             ('show_clip', self.show_clip_cb),
+            ('show_depth_surface', self.show_depth_surface_cb),
+            ('show_rt_surface', self.show_rt_surface_cb),
             ('show_raster_pixels', self.show_pixels_cb),
             ('show_msaa_samples', self.show_msaa_cb),
             ('show_tile_labels', self.show_tile_labels_cb),

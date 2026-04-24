@@ -39,6 +39,8 @@ class View3D(QWidget):
         self.show_tiles = True
         self.show_scissor = True
         self.show_clip = True
+        self.show_depth_surface = True
+        self.show_rt_surface = True
         self.show_raster_pixels = True
         self.show_msaa_samples = False
         self.show_tile_labels = True
@@ -127,8 +129,9 @@ class View3D(QWidget):
         if not self.config:
             return (x, y, z)
 
-        nx = (x / self.config.screen_width) * 2 - 1
-        ny = 1 - (y / self.config.screen_height) * 2
+        max_dim = max(self.config.screen_width, self.config.screen_height)
+        nx = ((x - self.config.screen_width / 2) / max_dim) * 2
+        ny = ((self.config.screen_height / 2 - y) / max_dim) * 2
         nz = z * 0.75
         return (nx, ny, nz)
 
@@ -205,8 +208,9 @@ class View3D(QWidget):
         cy = self.height() / 2 + self.pan_y
         nx = (vx - cx) / scale
         ny = (cy - vy) / scale
-        sx = (nx + 1) * self.config.screen_width / 2
-        sy = (1 - ny) * self.config.screen_height / 2
+        max_dim = max(self.config.screen_width, self.config.screen_height)
+        sx = self.config.screen_width / 2 + (nx * max_dim / 2)
+        sy = self.config.screen_height / 2 - (ny * max_dim / 2)
         return (sx, sy)
 
     def paintEvent(self, event):
@@ -234,6 +238,12 @@ class View3D(QWidget):
 
         if self.show_tile_pixel_axes:
             self._draw_tile_pixel_axes(painter)
+
+        if self.show_depth_surface:
+            self._draw_depth_surface(painter)
+
+        if self.show_rt_surface:
+            self._draw_rt_surface(painter)
 
         if self.show_clip:
             self._draw_clip_region(painter)
@@ -383,10 +393,10 @@ class View3D(QWidget):
         for py in range(min_y, max_y + 1):
             self._draw_projected_line(painter, (min_x, py, 0), (max_x, py, 0))
 
-        if pixel_size < 10.0 or not self.rasterized_results:
+        if pixel_size < 14.0 or not self.rasterized_results:
             return
 
-        painter.setFont(QFont("Consolas", max(6, min(9, int(pixel_size / 2)))))
+        painter.setFont(QFont("Consolas", max(6, min(9, int(pixel_size / 2.5)))))
         painter.setPen(QPen(QColor(115, 120, 145)))
         fm = QFontMetrics(painter.font())
         drawn = 0
@@ -397,9 +407,35 @@ class View3D(QWidget):
                 if not (min_x <= px < max_x and min_y <= py < max_y):
                     continue
                 label = f"{px},{py}"
+                label_w = fm.horizontalAdvance(label)
+                label_h = fm.height()
+                if pixel_size <= label_w + 4 or pixel_size <= label_h + 2:
+                    continue
                 sx, sy = self._project(px + 0.5, py + 0.5, 0)
-                painter.drawText(int(sx - fm.horizontalAdvance(label) / 2), int(sy + fm.height() / 3), label)
+                painter.drawText(int(sx - label_w / 2), int(sy + label_h / 3), label)
                 drawn += 1
+
+    def _draw_depth_surface(self, painter: QPainter):
+        w = self.config.depth_surface_width
+        h = self.config.depth_surface_height
+        painter.setBrush(Qt.BrushStyle.NoBrush)
+        painter.setPen(QPen(QColor(80, 150, 255), 2, Qt.PenStyle.DashLine))
+        self._draw_projected_rect(painter, 0, 0, w, h, 0.006)
+        sx, sy = self._project(0, h, 0.006)
+        painter.setFont(QFont("Arial", 8))
+        painter.setPen(QPen(QColor(120, 180, 255)))
+        painter.drawText(int(sx + 4), int(sy + 12), f"Depth Surf({w}x{h})")
+
+    def _draw_rt_surface(self, painter: QPainter):
+        w = self.config.rt_width
+        h = self.config.rt_height
+        painter.setBrush(Qt.BrushStyle.NoBrush)
+        painter.setPen(QPen(QColor(210, 110, 255), 2, Qt.PenStyle.DashLine))
+        self._draw_projected_rect(painter, 0, 0, w, h, 0.008)
+        sx, sy = self._project(0, h, 0.008)
+        painter.setFont(QFont("Arial", 8))
+        painter.setPen(QPen(QColor(230, 150, 255)))
+        painter.drawText(int(sx + 4), int(sy + 24), f"RT({w}x{h})")
 
     def _draw_clip_region(self, painter: QPainter):
         cx, cy, cw, ch = self.config.clip_region
@@ -743,6 +779,14 @@ class View3D(QWidget):
 
     def toggle_clip(self, show: bool):
         self.show_clip = show
+        self.update()
+
+    def toggle_depth_surface(self, show: bool):
+        self.show_depth_surface = show
+        self.update()
+
+    def toggle_rt_surface(self, show: bool):
+        self.show_rt_surface = show
         self.update()
 
     def toggle_raster_pixels(self, show: bool):

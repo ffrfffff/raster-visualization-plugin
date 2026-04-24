@@ -70,6 +70,12 @@ python main.py
 
 ## 版本日志
 
+### v0.16.0 (2026-04-24)
+- 新增 Depth Surf 和 RT Surf 两个独立显示开关，不再把 surface 显示合并为单一开关
+- Top View 和 3D View 新增 Depth Surface Size / Render Target Size 边界可视化，并同步支持 Popout 独立窗口
+- 修正 3D View 的 screen 归一化比例，避免非正方形 screen 下像素显示被拉伸
+- 3D View 像素坐标文字改为按格子实际显示空间裁剪，避免坐标挤出 pixel 格子
+
 ### v0.15.0 (2026-04-24)
 - 3D View 滚轮缩放改为以鼠标当前位置为锚点，和 Top View 一样保持鼠标下的内容位置稳定
 - 3D View 缩放时会同步补偿 pan offset，避免只围绕视图中心缩放导致画面漂移
