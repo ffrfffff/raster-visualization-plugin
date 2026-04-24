@@ -159,6 +159,10 @@ python main.py
 
 ## 版本日志
 
+### v0.18.0 (2026-04-24)
+- 将 `.claude/` 加入 `.gitignore`，避免本地 Claude Code 配置和 hook 文件继续提交到仓库
+- 从 Git 索引移除已跟踪的 `.claude/settings.json` 和 `.claude/hooks/require_changelog_and_push.py`，保留本地文件不删除
+
 ### v0.17.0 (2026-04-24)
 - README 功能说明扩展为完整使用文档，覆盖配置面板、三角形管理、软件光栅化、MSAA、Top/Depth/3D 视图、显示开关、交互、Popout 和性能优化
 - README 新增当前限制与后续方向，记录 PB / display list / depth buffer 等后续扩展目标
