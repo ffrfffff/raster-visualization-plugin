@@ -36,6 +36,13 @@ python main.py
 - JSON 中可配置多个三角形，每个三角形包含 3 个 screen-space 顶点 `[x, y, z]`，并可选配置 RGB 颜色。
 - 导入后会自动同步配置面板、三角形列表、Top View、Depth Side View、3D View 和已打开的 Popout 窗口。
 
+#### JSON 坐标进制说明
+- 标准 JSON number 只支持十进制，不能直接写 `0x...` 或 `0b...` 作为数字。
+- 如果需要在 JSON 文件中表达二进制或十六进制，建议使用字符串形式，例如 `"0x00006400"` 或 `"0b000000000110010000000000"`。
+- X/Y 建议按 Q16.8 定点格式解析：十进制数字表示 screen-space float；字符串形式的 `0x...` / `0b...` 可表示 Q16.8 bit pattern。
+- Z 建议按 FP32 解析：十进制数字表示普通浮点值；字符串形式的 `0x...` / `0b...` 可表示 FP32 bit pattern。
+- 当前版本的 JSON 导入实现只读取十进制 JSON number；二进制/十六进制字符串格式作为后续扩展约定记录。
+
 示例：
 
 ```json
@@ -55,6 +62,19 @@ python main.py
       "color": [255, 0, 0]
     }
   ]
+}
+```
+
+分进制坐标写法示例（后续扩展约定）：
+
+```json
+{
+  "vertices": [
+    ["0x00006400", "0x00006400", "0x00000000"],
+    ["0x0000c800", "0x00006400", "0x3e99999a"],
+    ["0b000000001001011000000000", "0b000000001100100000000000", "0xbe4ccccd"]
+  ],
+  "color": [255, 0, 0]
 }
 ```
 
@@ -192,6 +212,7 @@ python main.py
 - 新增 JSON 场景导入功能，可通过 `File > Import Scene...` 一次性读取完整配置和全部三角形
 - JSON 导入支持 MSAA、screen/depth surface/render target、clip、scissor、tile size 等配置项
 - JSON 导入支持多个三角形的 3 个顶点和可选 RGB 颜色，导入后自动同步配置面板、三角形列表、Top/Depth/3D 和 Popout
+- README 补充 JSON 文件中二进制/十六进制坐标需用字符串表示的说明，并记录 X/Y Q16.8、Z FP32 的后续扩展约定
 
 ### v1.0.2 (2026-04-24)
 - 移除 GUI 中的 `Cov Mask` 和 `MSAA` 显示开关，右上角 MSAA sample pattern 预览框改为默认一直显示
