@@ -30,6 +30,34 @@ python main.py
 - 顶点编辑支持 Decimal / Binary / Hexadecimal 三种格式切换。
 - 坐标显示会根据当前格式自动转换，便于对照硬件/协议中的定点或浮点表示。
 
+### 场景 JSON 导入
+- 支持通过 `File > Import Scene...` 读取 JSON 场景文件，一次性导入完整配置和全部三角形。
+- JSON 中可配置 MSAA、Screen Size、Depth Surface Size、Render Target Size、Clip Region、Scissor Rect 和 Tile Size。
+- JSON 中可配置多个三角形，每个三角形包含 3 个 screen-space 顶点 `[x, y, z]`，并可选配置 RGB 颜色。
+- 导入后会自动同步配置面板、三角形列表、Top View、Depth Side View、3D View 和已打开的 Popout 窗口。
+
+示例：
+
+```json
+{
+  "config": {
+    "msaa": 4,
+    "screen_size": [800, 600],
+    "depth_surface_size": [800, 600],
+    "render_target_size": [800, 600],
+    "clip_region": [0, 0, 800, 600],
+    "scissor": [0, 0, 800, 600],
+    "tile_size": [16, 16]
+  },
+  "triangles": [
+    {
+      "vertices": [[100, 100, 0.0], [200, 100, 0.3], [150, 200, -0.2]],
+      "color": [255, 0, 0]
+    }
+  ]
+}
+```
+
 ### 软件光栅化器
 - 使用屏幕空间三角形进行软件光栅化。
 - 使用 edge function 判断像素或 sample 是否落入三角形。
@@ -154,10 +182,16 @@ python main.py
 │   │   └── software_rasterizer.py   # 软件光栅化器
 │   └── utils/
 │       ├── geometry.py              # 几何计算 + MSAA采样位置
-│       └── fixed_point.py           # Q16.8 / FP32 格式转换
+│       ├── fixed_point.py           # Q16.8 / FP32 格式转换
+│       └── scene_io.py              # JSON 场景导入
 ```
 
 ## 版本日志
+
+### v1.1.0 (2026-04-27)
+- 新增 JSON 场景导入功能，可通过 `File > Import Scene...` 一次性读取完整配置和全部三角形
+- JSON 导入支持 MSAA、screen/depth surface/render target、clip、scissor、tile size 等配置项
+- JSON 导入支持多个三角形的 3 个顶点和可选 RGB 颜色，导入后自动同步配置面板、三角形列表、Top/Depth/3D 和 Popout
 
 ### v1.0.2 (2026-04-24)
 - 移除 GUI 中的 `Cov Mask` 和 `MSAA` 显示开关，右上角 MSAA sample pattern 预览框改为默认一直显示

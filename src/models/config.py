@@ -43,6 +43,10 @@ class RasterConfigModel(QObject):
     def config(self) -> RasterConfig:
         return self._config
 
+    def set_config(self, config: RasterConfig):
+        self._config = config
+        self.config_changed.emit()
+
     def update_config(
         self,
         msaa: int,

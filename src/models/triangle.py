@@ -104,6 +104,10 @@ class TriangleListModel(QObject):
             self.triangle_updated.emit(index)
             self.triangles_changed.emit()
 
+    def set_triangles(self, triangles: List[Triangle]):
+        self._triangles = list(triangles)
+        self.triangles_changed.emit()
+
     def clear(self):
         self._triangles.clear()
         self.triangles_changed.emit()

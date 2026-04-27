@@ -2,7 +2,7 @@ from PyQt6.QtWidgets import (
     QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
     QSplitter, QMenuBar, QMenu, QToolBar, QStatusBar,
     QCheckBox, QLabel, QMessageBox, QTabWidget, QPushButton,
-    QSpinBox, QScrollBar, QGridLayout
+    QSpinBox, QScrollBar, QGridLayout, QFileDialog
 )
 from PyQt6.QtCore import Qt
 from .models.config import RasterConfigModel
@@ -14,6 +14,7 @@ from .views.view3d import View3D
 from .views.triangle_list_panel import TriangleListPanel
 from .views.popout_window import PopoutWindow
 from .renderers.software_rasterizer import SoftwareRasterizer
+from .utils.scene_io import load_scene
 
 
 class MainWindow(QMainWindow):
@@ -252,7 +253,7 @@ class MainWindow(QMainWindow):
 
         file_menu = menubar.addMenu("File")
         file_menu.addAction("New", self._on_new)
-        file_menu.addAction("Import Triangles...", self._on_import)
+        file_menu.addAction("Import Scene...", self._on_import)
         file_menu.addAction("Export Triangles...", self._on_export)
         file_menu.addSeparator()
         file_menu.addAction("Exit", self.close)
@@ -449,7 +450,43 @@ class MainWindow(QMainWindow):
         self._on_config_changed()
 
     def _on_import(self):
-        QMessageBox.information(self, "Import", "Import feature coming soon")
+        path, _ = QFileDialog.getOpenFileName(
+            self,
+            "Import Scene",
+            "",
+            "JSON Files (*.json);;All Files (*)"
+        )
+        if not path:
+            return
+
+        try:
+            config, triangles = load_scene(path)
+        except ValueError as exc:
+            QMessageBox.warning(self, "Import Failed", str(exc))
+            return
+
+        self._apply_imported_scene(config, triangles)
+        QMessageBox.information(self, "Import Complete", f"Imported {len(triangles)} triangle(s).")
+
+    def _apply_imported_scene(self, config, triangles):
+        self.config_model.blockSignals(True)
+        self.triangle_model.blockSignals(True)
+        self.config_model.set_config(config)
+        self.triangle_model.set_triangles(triangles)
+        self.config_model.blockSignals(False)
+        self.triangle_model.blockSignals(False)
+
+        self.config_panel.sync_from_model()
+        self.rasterizer.update_config(self.config_model.config)
+        self.raster_view.set_config(self.config_model.config)
+        self.depth_view.set_config(self.config_model.config)
+        self.view3d.set_config(self.config_model.config)
+        self.goto_x_spin.setRange(0, self.config_model.config.screen_width)
+        self.goto_y_spin.setRange(0, self.config_model.config.screen_height)
+        self.goto_x_spin.setValue(min(self.goto_x_spin.value(), self.config_model.config.screen_width))
+        self.goto_y_spin.setValue(min(self.goto_y_spin.value(), self.config_model.config.screen_height))
+        self._update_views()
+        self.triangle_panel.update_triangles(self.triangle_model.triangles)
 
     def _on_export(self):
         QMessageBox.information(self, "Export", "Export feature coming soon")
