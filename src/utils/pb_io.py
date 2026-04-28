@@ -336,8 +336,9 @@ def _build_template_words(vertex_count: int, primitive_count: int) -> Dict[int, 
         INDEX_DATA_START_BIT + primitive_count * INDEX_DATA_BITS,
     )
     word_count = max(2, math.ceil(end_bit / 256))
-    words = {index: DEFAULT_TEMPLATE_WORDS.get(index, 0) for index in range(word_count)}
-    # Rule 7: Randomize pds_state and isp_state dwords
+    # Initialize all words to 0, then randomize state block fields
+    words = {index: 0 for index in range(word_count)}
+    # Rule 7: Randomize all state block dwords (pds, isp, vertex format, point pitch)
     randomize_state_dwords(words)
     words[VERTEX_TOTAL_BIT // 256] = _set_bits(words.get(VERTEX_TOTAL_BIT // 256, 0), VERTEX_TOTAL_BIT % 256, 6, vertex_count - 1)
     for index in range(primitive_count):

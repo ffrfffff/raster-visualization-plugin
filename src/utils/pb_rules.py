@@ -90,6 +90,7 @@ STRUCT_SCHEMAS: Dict[str, Tuple[FieldSpec, ...]] = {
     "vertex_position_comp_format_word_zero_s": (
         FieldSpec("cs_isp_comp_format_z1", 4),
         FieldSpec("cs_isp_comp_format_z0", 4),
+        FieldSpec("cs_isp_comp_format_y2", 4),
         FieldSpec("cs_isp_comp_format_y1", 4),
         FieldSpec("cs_isp_comp_format_y0", 4),
         FieldSpec("cs_isp_comp_format_x2", 4),
@@ -383,6 +384,40 @@ def enforce_bf_flag_zero(words: Dict[int, int], primitive_count: int) -> None:
 
 
 def randomize_state_dwords(words: Dict[int, int]) -> None:
-    """Rule 7: Randomize all pds_state and isp_state dwords."""
+    """Rule 7: Randomize all state block dwords - every sub-field independently."""
     _randomize_pds_state(words)
     _randomize_isp_state(words)
+    _randomize_vertex_format(words)
+
+
+def _randomize_vertex_format(words: Dict[int, int]) -> None:
+    """Randomize vertex format and point pitch dwords - each sub-field individually."""
+    from .pb_io import _write_bits
+    
+    # Randomize vertex_varying_comp_size sub-fields
+    vcs_offset = STATE_BLOCK_MEMBER_OFFSETS["vertex_varying_comp_size"]
+    for field in STRUCT_SCHEMAS["vertex_varying_comp_size_word_s"]:
+        field_offset = STRUCT_FIELD_OFFSETS["vertex_varying_comp_size_word_s"][field.name]
+        random_value = random.getrandbits(field.width)
+        _write_bits(words, vcs_offset + field_offset, field.width, random_value)
+    
+    # Randomize vertex_position_comp_format_word_zero sub-fields
+    vpcf0_offset = STATE_BLOCK_MEMBER_OFFSETS["vertex_position_comp_format_word_zero"]
+    for field in STRUCT_SCHEMAS["vertex_position_comp_format_word_zero_s"]:
+        field_offset = STRUCT_FIELD_OFFSETS["vertex_position_comp_format_word_zero_s"][field.name]
+        random_value = random.getrandbits(field.width)
+        _write_bits(words, vpcf0_offset + field_offset, field.width, random_value)
+    
+    # Randomize vertex_position_comp_format_word_one sub-fields
+    vpcf1_offset = STATE_BLOCK_MEMBER_OFFSETS["vertex_position_comp_format_word_one"]
+    for field in STRUCT_SCHEMAS["vertex_position_comp_format_word_one_s"]:
+        field_offset = STRUCT_FIELD_OFFSETS["vertex_position_comp_format_word_one_s"][field.name]
+        random_value = random.getrandbits(field.width)
+        _write_bits(words, vpcf1_offset + field_offset, field.width, random_value)
+    
+    # Randomize point_pitch sub-fields
+    pp_offset = STATE_BLOCK_MEMBER_OFFSETS["point_pitch"]
+    for field in STRUCT_SCHEMAS["point_pitch_s"]:
+        field_offset = STRUCT_FIELD_OFFSETS["point_pitch_s"][field.name]
+        random_value = random.getrandbits(field.width)
+        _write_bits(words, pp_offset + field_offset, field.width, random_value)
