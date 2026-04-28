@@ -235,6 +235,7 @@ python main.py
 ## 版本日志
 
 ### v1.4.4 (2026-04-28)
+- `prim_header` 父行现在显示由 `cs_type`、`cs_isp_state_size`、`cs_prim_total`、`cs_mask_fmt`、`cs_prim_base_pres`、`cs_prim_base_offset` 按顺序拼成的 32-bit 值。
 - `pb_instruction` 表格父节点行不再输出类型名和 `@...` 标注，只保留层级名称和 `-` 占位。
 - `primitive_block_instruction`、`primblk_cfg` 和 `prim_header` 中除外部控制信号 `this_is_point_primblk` 外的字段按各自 bit 宽随机生成，不再使用固定默认值。
 - 调整 `pb_instruction` 表格层级：`primblk_cfg` 缩进显示在 `primitive_block_instruction` 下，`primblk_start_byte_base_low_addr` 起的字段回到 `primitive_block_instruction` 层级。

@@ -175,7 +175,7 @@ def _format_pb_instruction_table(
     in_instruction_tail = False
     for item in PRIMBLK_CFG_ROWS:
         if item == "prim_header":
-            rows.append(_table_parent_row("prim_header", indent=1))
+            rows.append(_table_row("prim_header", "integral", 32, _pack_fields(PRIM_HEADER_FIELDS, prim_header_values), "", indent=1))
             for name, width in PRIM_HEADER_FIELDS:
                 rows.append(_table_row(name, "integral", width, prim_header_values[name], "", indent=2))
             continue
@@ -343,6 +343,15 @@ def _random_primblk_cfg_values() -> Dict[str, int]:
         if item != "prim_header"
         for name, width in [item]
     }
+
+
+def _pack_fields(fields: Tuple[Tuple[str, int], ...], values: Dict[str, int]) -> int:
+    raw = 0
+    offset = 0
+    for name, width in fields:
+        raw |= (values[name] & ((1 << width) - 1)) << offset
+        offset += width
+    return raw
 
 
 def _format_unified_table(
