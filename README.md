@@ -235,9 +235,10 @@ python main.py
 ## 版本日志
 
 ### v1.4.4 (2026-04-28)
-- PB 导出新增完整 `pb_instruction random block` 表格，包含 `primitive_block_instruction` 和 `primblk_cfg` 两个层级。
+- 调整 `pb_instruction` 表格层级：`primblk_cfg` 现在缩进显示在 `primitive_block_instruction` 下面。
+- PB 导出新增完整 `pb_instruction random block` 表格，包含 `primitive_block_instruction` 以及其子层级 `primblk_cfg`。
 - `primitive_block_instruction` 表输出 `vf_vertex_total`、`cs_prim_total`、`cs_mask_fmt`、`this_is_point_primblk`、PDS/ISP/vertex varying 相关控制字段。
-- `primblk_cfg` 表输出 MSAA/fragment/context 地址配置、随机 rate 配置、state word 存在标志、primitive header 和 primitive mask words。
+- `primblk_cfg` 作为 `primitive_block_instruction` 的子层级输出 MSAA/fragment/context 地址配置、随机 rate 配置、state word 存在标志、primitive header 和 primitive mask words。
 - `this_is_point_primblk` 继续作为 PB 外部 instruction 控制信号，驱动 `point_pitch` 与 `index_data` 的互斥显示和写入。
 
 ### v1.4.3 (2026-04-28)
