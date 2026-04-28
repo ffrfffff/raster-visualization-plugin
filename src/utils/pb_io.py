@@ -167,15 +167,15 @@ def _format_pb_instruction_table(
         this_is_point_primblk,
     )
 
-    rows.append(_table_parent_row("primitive_block_instruction", "primitive_block_instruction_c", "@5569182"))
+    rows.append(_table_parent_row("primitive_block_instruction"))
     for name, width in PRIMITIVE_BLOCK_INSTRUCTION_FIELDS:
         rows.append(_table_row(name, "integral", width, primitive_values[name], "", indent=1))
 
-    rows.append(_table_parent_row("primblk_cfg", "rgx_raster_primitive_block_cfg", "@1174", indent=1))
+    rows.append(_table_parent_row("primblk_cfg", indent=1))
     in_instruction_tail = False
     for item in PRIMBLK_CFG_ROWS:
         if item == "prim_header":
-            rows.append(_table_parent_row("prim_header", "integral", "", indent=1))
+            rows.append(_table_parent_row("prim_header", indent=1))
             for name, width in PRIM_HEADER_FIELDS:
                 rows.append(_table_row(name, "integral", width, prim_header_values[name], "", indent=2))
             continue
@@ -409,10 +409,9 @@ def _table_title(title: str) -> str:
     return title
 
 
-def _table_parent_row(name: str, data_type: str, note: str = "", indent: int = 0) -> str:
+def _table_parent_row(name: str, indent: int = 0) -> str:
     field_name = f"{'  ' * indent}{name}"
-    note_text = " ".join(part for part in (_display_type_name(data_type), note) if part)
-    return f"{field_name:<58} {'-':<24} {note_text}"
+    return f"{field_name:<58} {'-':<24}"
 
 
 def _table_header() -> str:

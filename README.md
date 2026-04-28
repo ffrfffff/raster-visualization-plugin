@@ -235,6 +235,7 @@ python main.py
 ## 版本日志
 
 ### v1.4.4 (2026-04-28)
+- `pb_instruction` 表格父节点行不再输出类型名和 `@...` 标注，只保留层级名称和 `-` 占位。
 - `primitive_block_instruction`、`primblk_cfg` 和 `prim_header` 中除外部控制信号 `this_is_point_primblk` 外的字段按各自 bit 宽随机生成，不再使用固定默认值。
 - 调整 `pb_instruction` 表格层级：`primblk_cfg` 缩进显示在 `primitive_block_instruction` 下，`primblk_start_byte_base_low_addr` 起的字段回到 `primitive_block_instruction` 层级。
 - PB 导出新增完整 `pb_instruction random block` 表格，包含 `primitive_block_instruction` 以及其子层级 `primblk_cfg`。
