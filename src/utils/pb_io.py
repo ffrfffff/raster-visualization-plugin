@@ -13,7 +13,6 @@ from .pb_rules import (
     STRUCT_WIDTHS,
     enforce_bf_flag_zero,
     fields_with_offsets,
-    get_control_word_values,
     get_filtered_state_block_members,
     state_members_with_offsets,
 )
@@ -37,10 +36,6 @@ INDEX_DATA_RE = re.compile(
 
 COORD_BITS = 80
 MAX_VERTEX_COUNT = 63
-DEFAULT_TEMPLATE_WORDS = {
-    0: int("1a17933f8ed7ee08e155437004c47d4221dfffffc26040906625765eb8dcda1d", 16),
-    1: int("eecc4149d6779dd058786c350afa46613d45534204e8bd8888888888af000ee0", 16),
-}
 DEFAULT_COLORS = [
     (255, 100, 100),
     (100, 255, 100),
@@ -326,133 +321,28 @@ def _build_pb_instruction_values(
     primitive_count: int,
     this_is_point_primblk: int,
 ) -> Tuple[Dict[str, int], Dict[str, int], Dict[str, int]]:
-    control_values = get_control_word_values(words)
-    filtered_members = get_filtered_state_block_members(words)
-    state_names = {member.name for member in filtered_members}
-    vertex_varying = _read_member_struct(words, filtered_members, "vertex_varying_comp_size")
-    vertex_format_one = _read_member_struct(words, filtered_members, "vertex_position_comp_format_word_one")
-    pds_word1 = _read_member_struct(words, filtered_members, "pds_state_word1")
-    vf_vertex_total = max(0, min(vertex_count - 1, 63))
-    cs_prim_total = max(0, min(primitive_count, 127))
-    cs_mask_fmt = 2
-    varying_number = 0x77
-    primitive_values = {name: 0 for name, _ in PRIMITIVE_BLOCK_INSTRUCTION_FIELDS}
-    primitive_values.update({
-        "vf_vertex_total": vf_vertex_total,
-        "cs_prim_total": cs_prim_total,
-        "cs_mask_fmt": cs_mask_fmt,
-        "this_is_point_primblk": this_is_point_primblk,
-        "index_mask_visible_prim_number": 0 if this_is_point_primblk else cs_prim_total,
-        "isp_scenable": control_values.get("isp_scenable", 0),
-        "vf_vpt_id_pres": vertex_format_one.get("vf_vpt_id_pres", 0),
-        "pds_douti": pds_word1.get("pds_douti", 0),
-        "vf_prim_id_pres": vertex_format_one.get("vf_prim_id_pres", 0),
-        "varying_number_per_vertex": varying_number,
-        "cs_tsp_comp_format_size": vertex_varying.get("cs_tsp_comp_format_size", 0),
-        "cs_tsp_comp_table_size": vertex_varying.get("cs_tsp_comp_table_size", 0),
-        "cs_tsp_comp_vertex_size": vertex_varying.get("cs_tsp_comp_vertex_size", 0),
-    })
-    prim_header_values = {
-        "cs_type": 0,
-        "cs_isp_state_size": min(len(filtered_members), 127),
-        "cs_prim_total": cs_prim_total,
-        "cs_mask_fmt": cs_mask_fmt,
-        "cs_prim_base_pres": 0,
-        "cs_prim_base_offset": 0,
+    primitive_values = {
+        name: random.getrandbits(width)
+        for name, width in PRIMITIVE_BLOCK_INSTRUCTION_FIELDS
     }
-    primblk_values = _default_primblk_cfg_values()
-    prim_mask_word0 = _build_prim_mask_word(min(primitive_count, 4), 0)
-    prim_mask_word1 = _build_prim_mask_word(max(0, min(primitive_count - 4, 4)), 4)
-    prim_mask_word2 = _build_prim_mask_word(max(0, min(primitive_count - 8, 4)), 8)
-    instruction_bits = sum(width for _, width in PRIMITIVE_BLOCK_INSTRUCTION_FIELDS)
-    state_bits = sum(STRUCT_WIDTHS[member.schema_name] for member in filtered_members)
-    payload_bits = STRUCT_WIDTHS["point_pitch_s"] if this_is_point_primblk else primitive_count * INDEX_DATA_BITS
-    coord_bits = vertex_count * COORD_BITS
-    primblk_values.update({
-        "prim_mask_word0_exist": 1 if primitive_count > 0 else 0,
-        "prim_mask_word1_exist": 1 if primitive_count > 4 else 0,
-        "prim_mask_word2_exist": 1 if primitive_count > 8 else 0,
-        "primblk_instruction_size": min(math.ceil((instruction_bits + state_bits + payload_bits + coord_bits) / 8), 1023),
-        "isp_state_fb_exist": 1 if "isp_state_word_fb" in state_names else 0,
-        "isp_state_ba_exist": 1 if "isp_state_word_ba" in state_names else 0,
-        "isp_state_bb_exist": 1 if "isp_state_word_bb" in state_names else 0,
-        "isp_state_csc_exist": 1 if "isp_state_word_csc" in state_names else 0,
-        "isp_state_misc_exist": 1 if "isp_state_word_misc" in state_names else 0,
-        "isp_state_dbmin_exist": 1 if "isp_state_word_dbmin" in state_names else 0,
-        "isp_state_dbmax_exist": 1 if "isp_state_word_dbmax" in state_names else 0,
-        "vertex_total_real": vf_vertex_total,
-        "primitive_total_real": cs_prim_total,
-        "ceil_half_vertex_total": min(math.ceil(vertex_count / 2), 63),
-        "ceil_half_primitive_total": min(math.ceil(primitive_count / 2), 127),
-        "varying_comp_format_number_total": varying_number,
-        "prim_mask_word0": prim_mask_word0,
-        "prim_mask_word1": prim_mask_word1,
-        "prim_mask_word2": prim_mask_word2,
-        "unmerged_byte_based_prim_mask_word0": prim_mask_word0,
-        "unmerged_byte_based_prim_mask_word1": prim_mask_word1,
-        "unmerged_byte_based_prim_mask_word2": prim_mask_word2,
-    })
-    for word_name, raw in (("prim_mask_word0", prim_mask_word0), ("prim_mask_word1", prim_mask_word1), ("prim_mask_word2", prim_mask_word2)):
-        primblk_values[f"{word_name}.byte_mask"] = _extract_bits(raw, 0, 4)
-        primblk_values[f"{word_name}.bit_mask"] = _extract_bits(raw, 4, 4)
-    primblk_values.update({
-        "prim_mask_word0.index_mask": _extract_bits(prim_mask_word0, 8, 8),
-        "prim_mask_word0.reserved": _extract_bits(prim_mask_word0, 16, 4),
-        "prim_mask_word0[0]": _extract_bits(prim_mask_word0, 20, 3),
-        "prim_mask_word0[1]": _extract_bits(prim_mask_word0, 23, 3),
-        "prim_mask_word0[2]": _extract_bits(prim_mask_word0, 26, 3),
-        "prim_mask_word0[3]": _extract_bits(prim_mask_word0, 29, 3),
-    })
+    primitive_values["this_is_point_primblk"] = this_is_point_primblk
+
+    prim_header_values = {
+        name: random.getrandbits(width)
+        for name, width in PRIM_HEADER_FIELDS
+    }
+
+    primblk_values = _random_primblk_cfg_values()
     return primitive_values, primblk_values, prim_header_values
 
 
-def _default_primblk_cfg_values() -> Dict[str, int]:
-    values = {name: 0 for item in PRIMBLK_CFG_ROWS if item != "prim_header" for name, _ in [item]}
-    for name in values:
-        if name.endswith("_rate"):
-            values[name] = 50
-    values.update({
-        "mt_cr_isp_msaa_rast_mode": 3,
-        "mt_cr_isp_msaa_mode": 1,
-        "effective_msaa_mode": 1,
-        "mt_cr_frag_ctrl_screen_offset": 0xC400,
-        "mt_cr_frag_ctrl_screen_guardband": 0x30D7,
-        "mt_cr_frag_screen_xmax_real": 0x080D,
-        "mt_cr_frag_screen_ymax_real": 0x000A,
-        "mt_cr_context_mapping_pm_frag_vce": 0x1F,
-        "mt_cr_context_mapping_frag_frag": 0x1F,
-        "mt_cr_isp_pixel_base_addr": 0x2AC4,
-        "mt_cr_isp_dbias_base_addr": 0x8048E3B78D0,
-        "mt_cr_isp_scissor_base_addr": 0x167C08A22770,
-        "cs_prim_total_zero_rate": 1,
-        "cs_prim_total_nonzero_rate": 99,
-        "enable_vertex_data_compress_rate": 0,
-        "disable_vertex_data_compress_rate": 100,
-        "enable_varying_data_compress_rate": 0,
-        "disable_varying_data_compress_rate": 100,
-    })
-    return values
-
-
-def _read_member_struct(words: Dict[int, int], members, member_name: str) -> Dict[str, int]:
-    offset = 0
-    for member in members:
-        width = STRUCT_WIDTHS[member.schema_name]
-        if member.name == member_name:
-            return _unpack_struct(member.schema_name, _read_bits_with_default(words, offset, width))
-        offset += width
-    return {}
-
-
-def _build_prim_mask_word(count: int, base_index: int) -> int:
-    raw = 0
-    mask = (1 << min(max(count, 0), 4)) - 1 if count > 0 else 0
-    raw |= mask
-    raw |= mask << 4
-    raw |= mask << 8
-    for slot in range(4):
-        raw |= ((base_index + slot) & 0x7) << (20 + slot * 3)
-    return raw
+def _random_primblk_cfg_values() -> Dict[str, int]:
+    return {
+        name: random.getrandbits(width)
+        for item in PRIMBLK_CFG_ROWS
+        if item != "prim_header"
+        for name, width in [item]
+    }
 
 
 def _format_unified_table(

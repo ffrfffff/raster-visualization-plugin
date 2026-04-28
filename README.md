@@ -235,10 +235,11 @@ python main.py
 ## 版本日志
 
 ### v1.4.4 (2026-04-28)
+- `primitive_block_instruction`、`primblk_cfg` 和 `prim_header` 中除外部控制信号 `this_is_point_primblk` 外的字段按各自 bit 宽随机生成，不再使用固定默认值。
 - 调整 `pb_instruction` 表格层级：`primblk_cfg` 缩进显示在 `primitive_block_instruction` 下，`primblk_start_byte_base_low_addr` 起的字段回到 `primitive_block_instruction` 层级。
 - PB 导出新增完整 `pb_instruction random block` 表格，包含 `primitive_block_instruction` 以及其子层级 `primblk_cfg`。
 - `primitive_block_instruction` 表输出 `vf_vertex_total`、`cs_prim_total`、`cs_mask_fmt`、`this_is_point_primblk`、PDS/ISP/vertex varying 相关控制字段。
-- `primblk_cfg` 作为 `primitive_block_instruction` 的子层级输出 MSAA/fragment/context 地址配置、随机 rate 配置、state word 存在标志、primitive header 和 primitive mask words。
+- `primblk_cfg` 作为 `primitive_block_instruction` 的子层级输出 MSAA/fragment/context 地址配置、随机 rate 配置、state word 存在标志、primitive header 和 primitive mask words；这些 instruction/config 字段按各自 bit 宽独立随机生成。
 - `this_is_point_primblk` 继续作为 PB 外部 instruction 控制信号，驱动 `point_pitch` 与 `index_data` 的互斥显示和写入。
 
 ### v1.4.3 (2026-04-28)
