@@ -27,16 +27,15 @@ MEMORY_ASSIGNMENT_RE = re.compile(
     re.IGNORECASE,
 )
 POSITION_COORD_RE = re.compile(
-    r"original_position_coord\s*\[\s*(\d+)\s*\].*?(?:80\s*)?'\s*h\s*([0-9a-fA-F_]+)",
+    r"(?:original_position_coord|v)\s*\[\s*(\d+)\s*\].*?(?:80\s*)?'\s*h\s*([0-9a-fA-F_]+)",
     re.IGNORECASE,
 )
 INDEX_DATA_RE = re.compile(
-    r"index_data\s*\[\s*(\d+)\s*\](?!\s*\.).*?(?:width\s*=\s*24\b.*?)?\'\s*h\s*([0-9a-fA-F_]+)",
+    r"(?:index_data|p)\s*\[\s*(\d+)\s*\](?!\s*\.).*?(?:width\s*=\s*24\b.*?)?\'\s*h\s*([0-9a-fA-F_]+)",
     re.IGNORECASE,
 )
 
 COORD_BITS = 80
-COORD_START_BIT = 6 * 256 + 16 * 8
 MAX_VERTEX_COUNT = 63
 DEFAULT_TEMPLATE_WORDS = {
     0: int("1a17933f8ed7ee08e155437004c47d4221dfffffc26040906625765eb8dcda1d", 16),
@@ -89,8 +88,9 @@ def save_pb_dump(path: str, config: RasterConfig, triangles: List[Triangle]) -> 
     words = _build_template_words(len(vertices), len(index_words))
     for index, raw in enumerate(index_words):
         _write_bits(words, INDEX_DATA_START_BIT + index * INDEX_DATA_BITS, INDEX_DATA_BITS, raw)
+    coord_start_bit = _coord_start_bit(len(index_words))
     for index, vertex in enumerate(vertices):
-        _write_bits(words, COORD_START_BIT + index * COORD_BITS, COORD_BITS, _pack_position_coord(vertex))
+        _write_bits(words, coord_start_bit + index * COORD_BITS, COORD_BITS, _pack_position_coord(vertex))
 
     # Rule 5: Enforce bf_flag=0 when isp_twosided=0
     enforce_bf_flag_zero(words, len(triangles))
@@ -171,7 +171,6 @@ def _format_unified_table(
     # Position coord section with original_position_coord title (no value display)
     rows.append("original_position_coord")
     for index, vertex in enumerate(vertices):
-        absolute_bit = COORD_START_BIT + index * COORD_BITS
         raw = _pack_position_coord(vertex)
         x_raw = _extract_bits(raw, 0, 24)
         y_raw = _extract_bits(raw, 24, 24)
@@ -264,20 +263,26 @@ def _parse_index_data_literals(text: str) -> List[int]:
     return [raw for _, raw in sorted(values)]
 
 
+def _coord_start_bit(primitive_count: int) -> int:
+    return INDEX_DATA_START_BIT + primitive_count * INDEX_DATA_BITS
+
+
 def _extract_position_coords_from_words(words: Dict[int, int]) -> List[Tuple[float, float, float]]:
     explicit_count = _extract_vertex_total(words)
-    available_count = _available_position_coord_count(words)
+    primitive_count = explicit_count // 3 if explicit_count else _primitive_count_from_words(words)
+    coord_start_bit = _coord_start_bit(primitive_count)
+    available_count = _available_position_coord_count(words, coord_start_bit)
     if explicit_count and explicit_count <= available_count:
         count = explicit_count
     else:
         count = available_count
 
     if count <= 0:
-        raise ValueError("PB dump does not contain position coord data at the Doc1 v1 offset")
+        raise ValueError("PB dump does not contain position coord data after index_data")
 
     coords = []
     for index in range(count):
-        raw = _read_bits(words, COORD_START_BIT + index * COORD_BITS, COORD_BITS)
+        raw = _read_bits(words, coord_start_bit + index * COORD_BITS, COORD_BITS)
         coords.append(_unpack_position_coord(raw))
     return coords
 
@@ -290,16 +295,22 @@ def _extract_index_data_from_words(words: Dict[int, int], primitive_count: int) 
     return index_words
 
 
-def _available_position_coord_count(words: Dict[int, int]) -> int:
+def _available_position_coord_count(words: Dict[int, int], coord_start_bit: int) -> int:
     count = 0
     while count < MAX_VERTEX_COUNT:
-        start = COORD_START_BIT + count * COORD_BITS
+        start = coord_start_bit + count * COORD_BITS
         end = start + COORD_BITS - 1
         needed_words = range(start // 256, end // 256 + 1)
         if any(index not in words for index in needed_words):
             break
         count += 1
     return count
+
+
+def _primitive_count_from_words(words: Dict[int, int]) -> int:
+    max_bit = (max(words) + 1) * 256 if words else INDEX_DATA_START_BIT
+    remaining_bits = max(0, max_bit - INDEX_DATA_START_BIT)
+    return min(MAX_VERTEX_COUNT // 3, remaining_bits // (INDEX_DATA_BITS + 3 * COORD_BITS))
 
 
 def _extract_vertex_total(words: Dict[int, int]) -> int:
@@ -331,8 +342,9 @@ def _build_triangles(coords: List[Tuple[float, float, float]], index_data: List[
 
 
 def _build_template_words(vertex_count: int, primitive_count: int) -> Dict[int, int]:
+    coord_start_bit = _coord_start_bit(primitive_count)
     end_bit = max(
-        COORD_START_BIT + vertex_count * COORD_BITS,
+        coord_start_bit + vertex_count * COORD_BITS,
         INDEX_DATA_START_BIT + primitive_count * INDEX_DATA_BITS,
     )
     word_count = max(2, math.ceil(end_bit / 256))
