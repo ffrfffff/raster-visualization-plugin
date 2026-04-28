@@ -100,11 +100,12 @@ python main.py
 - 支持通过 `File > Import PB Dump...` 导入 Doc1-like 硬件验证环境 dump。
 - 支持解析 `randomized_3d_memory[frag_vce][primitive_block_addr+N] = 256'h...;` 形式的 256-bit SystemVerilog memory word。
 - `256'h...` 的最右侧是 bit0，字段按低 bit 到高 bit 对齐；插件内部按这个规则拆分和重新打包。
+- PB 生成规则独立维护在 `src/utils/pb_rules.py`，后续可继续扩展条件规则，例如根据控制变量决定某些 word 是否生成。
 - 状态块字段表按 `gpu_isp_pds_bif_pkg` 的 packed struct 展开：PDS、ISP、vertex varying/position format、point pitch 都逐字段列出。
 - 支持 24-bit `index_data_s`：`ix_index_0`、AB flag、reserved0、`ix_index_1`、BC flag、reserved1、`ix_index_2`、CA flag、BF flag 按结构体顺序打包。
 - v1 从 Doc1 模板位置解析 `original_position_coord`，每个顶点占 80 bit：X/Y 为 24-bit signed Q16.8，Z 为 32-bit FP32。
 - 导入时优先使用 `index_data_s` 还原 primitive 与顶点索引关系；没有 index table 时才回退为每 3 个顶点组成一个三角形。
-- 支持通过 `File > Export PB Dump...` 从当前 GUI 三角形生成 Doc1-like dump，导出文件先写状态块字段表、index data 表、坐标表，再写最终 `256'h...` memory dump，便于逐字段对应验证。
+- 支持通过 `File > Export PB Dump...` 从当前 GUI 三角形生成 Doc1-like dump，导出文件使用无注释表格：每个 word 作为父行，子字段缩进显示 bits/hex/note，最后写最终 `256'h...` memory dump。
 - 当前 v1 是模板化反解析，不生成完整硬件可用的 control stream、primitive instruction header 或 visibility config。
 
 ### MSAA 可视化
@@ -226,10 +227,16 @@ python main.py
 │       ├── geometry.py              # 几何计算 + MSAA采样位置
 │       ├── fixed_point.py           # Q16.8 / FP32 格式转换
 │       ├── scene_io.py              # JSON 场景导入
+│       ├── pb_rules.py              # PB Dump 字段/生成规则
 │       └── pb_io.py                 # PB Dump v1 解析/反解析
 ```
 
 ## 版本日志
+
+### v1.2.2 (2026-04-28)
+- 将 PB 字段 schema 和生成规则拆分到 `src/utils/pb_rules.py`，便于后续扩展条件生成规则。
+- PB 导出格式改为无注释表格，去掉重复的 `width=` / `value=` 文本，并用缩进表示 word 与子字段层级。
+- 保持 `index_data_s` 与坐标表 round-trip 校验，导出仍包含最终 256-bit memory dump。
 
 ### v1.2.1 (2026-04-28)
 - PB Dump 解析/反解析改为按 `gpu_isp_pds_bif_pkg` packed struct schema 展开状态块字段。

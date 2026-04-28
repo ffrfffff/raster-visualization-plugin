@@ -1,11 +1,20 @@
 import math
 import re
 import struct
-from dataclasses import dataclass
-from typing import Dict, Iterable, List, Optional, Tuple
+from typing import Dict, List, Optional, Tuple
 
 from ..models.config import RasterConfig
 from ..models.triangle import Triangle
+from .pb_rules import (
+    FULL_STATE_BLOCK_MEMBERS,
+    INDEX_DATA_BITS,
+    INDEX_DATA_START_BIT,
+    STRUCT_SCHEMAS,
+    STRUCT_WIDTHS,
+    VERTEX_TOTAL_BIT,
+    fields_with_offsets,
+    state_members_with_offsets,
+)
 
 MEMORY_ASSIGNMENT_RE = re.compile(
     r"primitive_block_addr(?:\s*\+\s*(\d+))?\s*\]\s*=\s*256\s*'\s*h\s*([0-9a-fA-F_xXzZ?]+)",
@@ -35,167 +44,6 @@ DEFAULT_COLORS = [
     (255, 100, 255),
     (100, 255, 255),
 ]
-
-
-@dataclass(frozen=True)
-class FieldSpec:
-    name: str
-    width: int
-
-
-@dataclass(frozen=True)
-class StateBlockMember:
-    name: str
-    schema_name: str
-
-
-STRUCT_SCHEMAS: Dict[str, Tuple[FieldSpec, ...]] = {
-    "pds_state_word0_s": (
-        FieldSpec("pds_fragment_addr", 28),
-        FieldSpec("reserved", 4),
-    ),
-    "pds_state_word1_s": (
-        FieldSpec("pds_douti", 1),
-        FieldSpec("reserved", 11),
-        FieldSpec("pds_index", 20),
-    ),
-    "isp_state_control_word_s": (
-        FieldSpec("reserved", 13),
-        FieldSpec("pt_upfront_depth_disable", 1),
-        FieldSpec("vptgroup_id", 1),
-        FieldSpec("depthclamp_en", 1),
-        FieldSpec("isp_upass", 16),
-        FieldSpec("inputcoverage_en", 1),
-        FieldSpec("isp_miscenable", 1),
-        FieldSpec("isp_samplemaskenable", 1),
-        FieldSpec("isp_perfenable", 1),
-        FieldSpec("isp_upass_reserved", 8),
-        FieldSpec("isp_twosided", 1),
-        FieldSpec("isp_bpres", 1),
-        FieldSpec("isp_dbenable", 1),
-        FieldSpec("isp_scenable", 1),
-        FieldSpec("isp_oqenable", 1),
-        FieldSpec("isp_oqboolean", 1),
-        FieldSpec("isp_oqindex", 14),
-    ),
-    "isp_state_word_a_s": (
-        FieldSpec("ispa_objtype", 4),
-        FieldSpec("ispa_passtype", 3),
-        FieldSpec("ispa_tagwritedisable", 1),
-        FieldSpec("reserved", 2),
-        FieldSpec("ispa_dwritedisable", 1),
-        FieldSpec("ispa_dfbztestenable", 1),
-        FieldSpec("ispa_dcmpmode", 3),
-        FieldSpec("ispa_linefilllastpixel", 1),
-        FieldSpec("ispa_pointlinewidth", 8),
-        FieldSpec("ispa_sreference", 8),
-    ),
-    "isp_state_word_b_s": (
-        FieldSpec("reserved", 4),
-        FieldSpec("ispb_scmpmode", 3),
-        FieldSpec("ispb_sop1", 3),
-        FieldSpec("ispb_sop2", 3),
-        FieldSpec("ispb_sop3", 3),
-        FieldSpec("ispb_scmpmask", 8),
-        FieldSpec("ispb_swmask", 8),
-    ),
-    "isp_state_word_csc_s": (
-        FieldSpec("isp_cindex", 16),
-        FieldSpec("isp_scindex", 16),
-    ),
-    "isp_state_word_misc_s": (
-        FieldSpec("reserved", 7),
-        FieldSpec("ps_query_slot", 14),
-        FieldSpec("ps_query_enable", 1),
-        FieldSpec("dbt_op", 2),
-        FieldSpec("sr_comb_op", 3),
-        FieldSpec("per_draw_sr", 4),
-        FieldSpec("per_prim_sr_en", 1),
-    ),
-    "isp_state_word_dbmin_s": (FieldSpec("depth_bound_min", 32),),
-    "isp_state_word_dbmax_s": (FieldSpec("depth_bound_max", 32),),
-    "vertex_varying_comp_size_word_s": (
-        FieldSpec("reserved", 4),
-        FieldSpec("cs_tsp_comp_format_size", 6),
-        FieldSpec("cs_tsp_comp_table_size", 10),
-        FieldSpec("cs_tsp_comp_vertex_size", 12),
-    ),
-    "vertex_position_comp_format_word_zero_s": (
-        FieldSpec("cs_isp_comp_format_z1", 4),
-        FieldSpec("cs_isp_comp_format_z0", 4),
-        FieldSpec("cs_isp_comp_format_y1", 4),
-        FieldSpec("cs_isp_comp_format_y0", 4),
-        FieldSpec("cs_isp_comp_format_x2", 4),
-        FieldSpec("cs_isp_comp_format_x1", 4),
-        FieldSpec("cs_isp_comp_format_x0", 4),
-    ),
-    "vertex_position_comp_format_word_one_s": (
-        FieldSpec("reserved", 14),
-        FieldSpec("vf_vpt_id_pres", 1),
-        FieldSpec("vf_prim_msaa_disable", 1),
-        FieldSpec("vf_prim_id_pres", 1),
-        FieldSpec("vf_vertex_clipped", 1),
-        FieldSpec("vf_vertex_total", 6),
-        FieldSpec("cf_isp_comp_format_z3", 4),
-        FieldSpec("cf_isp_comp_format_z2", 4),
-    ),
-    "point_pitch_s": (
-        FieldSpec("pp_padjust1", 3),
-        FieldSpec("pp_pitch1", 13),
-        FieldSpec("pp_padjust0", 3),
-        FieldSpec("pp_pitch0", 13),
-    ),
-    "index_data_s": (
-        FieldSpec("ix_index_0", 6),
-        FieldSpec("ix_edge_flag_ab", 1),
-        FieldSpec("reserved0", 1),
-        FieldSpec("ix_index_1", 6),
-        FieldSpec("ix_edge_flag_bc", 1),
-        FieldSpec("reserved1", 1),
-        FieldSpec("ix_index_2", 6),
-        FieldSpec("ix_edge_flag_ca", 1),
-        FieldSpec("ix_bf_flag", 1),
-    ),
-}
-
-FULL_STATE_BLOCK_MEMBERS = (
-    StateBlockMember("pds_w0", "pds_state_word0_s"),
-    StateBlockMember("pds_w1", "pds_state_word1_s"),
-    StateBlockMember("isp_ctrl", "isp_state_control_word_s"),
-    StateBlockMember("isp_a", "isp_state_word_a_s"),
-    StateBlockMember("isp_b", "isp_state_word_b_s"),
-    StateBlockMember("isp_csc", "isp_state_word_csc_s"),
-    StateBlockMember("isp_misc", "isp_state_word_misc_s"),
-    StateBlockMember("db_min", "isp_state_word_dbmin_s"),
-    StateBlockMember("db_max", "isp_state_word_dbmax_s"),
-    StateBlockMember("vert_cmp_size", "vertex_varying_comp_size_word_s"),
-    StateBlockMember("vert_fmt0", "vertex_position_comp_format_word_zero_s"),
-    StateBlockMember("vert_fmt1", "vertex_position_comp_format_word_one_s"),
-    StateBlockMember("pt_pitch", "point_pitch_s"),
-)
-
-STRUCT_WIDTHS = {name: sum(field.width for field in fields) for name, fields in STRUCT_SCHEMAS.items()}
-STRUCT_FIELD_OFFSETS: Dict[str, Dict[str, int]] = {}
-for _schema_name, _fields in STRUCT_SCHEMAS.items():
-    _offset = 0
-    STRUCT_FIELD_OFFSETS[_schema_name] = {}
-    for _field in _fields:
-        STRUCT_FIELD_OFFSETS[_schema_name][_field.name] = _offset
-        _offset += _field.width
-
-STATE_BLOCK_MEMBER_OFFSETS: Dict[str, int] = {}
-_offset = 0
-for _member in FULL_STATE_BLOCK_MEMBERS:
-    STATE_BLOCK_MEMBER_OFFSETS[_member.name] = _offset
-    _offset += STRUCT_WIDTHS[_member.schema_name]
-FULL_STATE_BLOCK_BITS = _offset
-INDEX_DATA_BITS = STRUCT_WIDTHS["index_data_s"]
-INDEX_DATA_START_BIT = FULL_STATE_BLOCK_BITS
-VERTEX_TOTAL_BIT = (
-    STATE_BLOCK_MEMBER_OFFSETS["vert_fmt1"]
-    + STRUCT_FIELD_OFFSETS["vertex_position_comp_format_word_one_s"]["vf_vertex_total"]
-)
-
 
 def load_pb_dump(path: str) -> Tuple[RasterConfig, List[Triangle]]:
     try:
@@ -280,95 +128,85 @@ def format_annotated_pb_dump(
     if index_words is None:
         index_words = []
     parts = [
-        "// ============================================================",
-        "// PB Dump v1 field tables",
-        "// 256'h literals are printed high-bit on the left; bit0 is the rightmost nibble.",
-        "// Field rows follow gpu_isp_pds_bif_pkg packed struct order from low bit to high bit.",
-        "// The final memory dump at the end is generated from the field rows below.",
-        "// ============================================================",
+        "PB Dump v1 field tables",
         "",
         _format_state_block_table(words),
         _format_index_data_table(index_words),
         _format_position_coord_table(vertices),
-        "// ============================================================",
-        "// Final 256-bit memory dump",
-        "// ============================================================",
+        "Final 256-bit memory dump",
         format_memory_dump(words).rstrip(),
         "",
     ]
     return "\n".join(parts)
 
 
-def _fields_with_offsets(fields: Iterable[FieldSpec]) -> Iterable[Tuple[FieldSpec, int]]:
-    offset = 0
-    for field in fields:
-        yield field, offset
-        offset += field.width
-
-
-def _state_members_with_offsets(members: Iterable[StateBlockMember]) -> Iterable[Tuple[StateBlockMember, int]]:
-    offset = 0
-    for member in members:
-        yield member, offset
-        offset += STRUCT_WIDTHS[member.schema_name]
-
-
 def _format_state_block_table(words: Dict[int, int]) -> str:
-    rows = ["// gpu_isp_full_state_block_s"]
-    for member, offset in _state_members_with_offsets(FULL_STATE_BLOCK_MEMBERS):
+    rows = [_table_title("gpu_isp_full_state_block_s"), _table_header()]
+    for member, offset in state_members_with_offsets():
         schema_width = STRUCT_WIDTHS[member.schema_name]
         raw = _read_bits_with_default(words, offset, schema_width)
-        rows.append(_field_row(member.name, member.schema_name, schema_width, raw, _bit_range_label(offset, schema_width)))
+        rows.append(_table_row(member.name, member.schema_name, schema_width, raw, _bit_range_label(offset, schema_width)))
         rows.extend(_format_struct_field_rows(member.name, member.schema_name, raw, offset))
     rows.append("")
     return "\n".join(rows)
 
 
 def _format_index_data_table(index_words: List[int]) -> str:
-    rows = ["// index_data_s table"]
+    rows = [_table_title("index_data_s table"), _table_header()]
     for primitive_index, raw in enumerate(index_words):
         absolute_bit = INDEX_DATA_START_BIT + primitive_index * INDEX_DATA_BITS
-        rows.append(_field_row(f"index_data[{primitive_index}]", "index_data_s", INDEX_DATA_BITS, raw, _bit_range_label(absolute_bit, INDEX_DATA_BITS)))
-        rows.extend(_format_struct_field_rows(f"  index_data[{primitive_index}]", "index_data_s", raw, absolute_bit))
+        rows.append(_table_row(f"index_data[{primitive_index}]", "index_data_s", INDEX_DATA_BITS, raw, _bit_range_label(absolute_bit, INDEX_DATA_BITS)))
+        rows.extend(_format_struct_field_rows(f"index_data[{primitive_index}]", "index_data_s", raw, absolute_bit, indent=1))
     rows.append("")
     return "\n".join(rows)
 
 
-def _format_struct_field_rows(prefix: str, schema_name: str, raw: int, absolute_bit: int) -> List[str]:
+def _format_struct_field_rows(prefix: str, schema_name: str, raw: int, absolute_bit: int, indent: int = 1) -> List[str]:
     rows = []
-    for field, offset in _fields_with_offsets(STRUCT_SCHEMAS[schema_name]):
+    for field, offset in fields_with_offsets(STRUCT_SCHEMAS[schema_name]):
         field_raw = _extract_bits(raw, offset, field.width)
         rows.append(
-            _field_row(
+            _table_row(
                 f"{prefix}.{field.name}",
                 "integral",
                 field.width,
                 field_raw,
                 _bit_range_label(absolute_bit + offset, field.width),
+                indent=indent,
             )
         )
     return rows
 
 
 def _format_position_coord_table(vertices: List[Tuple[float, float, float]]) -> str:
-    rows = ["// original_position_coord table"]
+    rows = [_table_title("original_position_coord table"), _table_header()]
     for index, vertex in enumerate(vertices):
         absolute_bit = COORD_START_BIT + index * COORD_BITS
         raw = _pack_position_coord(vertex)
         x_raw = _extract_bits(raw, 0, 24)
         y_raw = _extract_bits(raw, 24, 24)
         z_raw = _extract_bits(raw, 48, 32)
-        rows.append(_field_row(f"original_position_coord[{index}]", "da(integral)", 80, raw, _bit_range_label(absolute_bit, COORD_BITS)))
-        rows.append(_field_row(f"  x[{index}]", "q16.8", 24, x_raw, f"{_bit_range_label(absolute_bit, 24)} dec={vertex[0]:.6g}"))
-        rows.append(_field_row(f"  y[{index}]", "q16.8", 24, y_raw, f"{_bit_range_label(absolute_bit + 24, 24)} dec={vertex[1]:.6g}"))
-        rows.append(_field_row(f"  z[{index}]", "fp32", 32, z_raw, f"{_bit_range_label(absolute_bit + 48, 32)} dec={vertex[2]:.6g}"))
+        rows.append(_table_row(f"original_position_coord[{index}]", "da(integral)", 80, raw, _bit_range_label(absolute_bit, COORD_BITS)))
+        rows.append(_table_row(f"x[{index}]", "q16.8", 24, x_raw, f"{_bit_range_label(absolute_bit, 24)} dec={vertex[0]:.6g}", indent=1))
+        rows.append(_table_row(f"y[{index}]", "q16.8", 24, y_raw, f"{_bit_range_label(absolute_bit + 24, 24)} dec={vertex[1]:.6g}", indent=1))
+        rows.append(_table_row(f"z[{index}]", "fp32", 32, z_raw, f"{_bit_range_label(absolute_bit + 48, 32)} dec={vertex[2]:.6g}", indent=1))
     rows.append("")
     return "\n".join(rows)
 
 
-def _field_row(name: str, data_type: str, width: int, value: int, note: str) -> str:
+def _table_title(title: str) -> str:
+    return title
+
+
+def _table_header() -> str:
+    return f"{'field':<58} {'type':<42} {'bits':<24} {'hex':<22} note"
+
+
+def _table_row(name: str, data_type: str, width: int, value: int, bits: str, note: str = "", indent: int = 0) -> str:
     hex_width = (width + 3) // 4
-    return f"// {name:<54} {data_type:<42} width={width:<3} value='h{value:0{hex_width}x}  {note}"
+    field_name = f"{'  ' * indent}{name}"
+    note_text = f" {note}" if note else ""
+    return f"{field_name:<58} {data_type:<42} {bits:<24} {'h' + format(value, f'0{hex_width}x'):<22}{note_text}"
 
 
 def _bit_range_label(absolute_bit: int, width: int) -> str:
@@ -509,7 +347,7 @@ def _unpack_index_data(raw: int) -> Dict[str, int]:
 def _unpack_struct(schema_name: str, raw: int) -> Dict[str, int]:
     return {
         field.name: _extract_bits(raw, offset, field.width)
-        for field, offset in _fields_with_offsets(STRUCT_SCHEMAS[schema_name])
+        for field, offset in fields_with_offsets(STRUCT_SCHEMAS[schema_name])
     }
 
 
