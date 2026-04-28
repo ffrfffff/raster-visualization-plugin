@@ -105,7 +105,8 @@ python main.py
 - 支持 24-bit `index_data_s`：`ix_index_0`、AB flag、reserved0、`ix_index_1`、BC flag、reserved1、`ix_index_2`、CA flag、BF flag 按结构体顺序打包。
 - v1 从 Doc1 模板位置解析 `original_position_coord`，每个顶点占 80 bit：X/Y 为 24-bit signed Q16.8，Z 为 32-bit FP32。
 - 导入时优先使用 `index_data_s` 还原 primitive 与顶点索引关系；没有 index table 时才回退为每 3 个顶点组成一个三角形。
-- 支持通过 `File > Export PB Dump...` 从当前 GUI 三角形生成 Doc1-like dump，导出文件使用无注释表格：每个 word 作为父行，子字段缩进显示 bits/hex/note，最后写最终 `256'h...` memory dump。
+- 支持通过 `File > Export PB Dump...` 从当前 GUI 三角形生成 Doc1-like dump，导出文件使用统一表格：`field / values / note` 三列，值为 `n'hxxx` 格式，子字段缩进显示，非 integral 行把 schema 名称显示在 field 列；最后写最终 `256'h...` memory dump。
+- 导出时 `pds_state_word0` 和 `pds_state_word1` 每次随机生成 32-bit 值，填充到字段表和最终 memory dump。
 - 当前 v1 是模板化反解析，不生成完整硬件可用的 control stream、primitive instruction header 或 visibility config。
 
 ### MSAA 可视化
@@ -232,6 +233,28 @@ python main.py
 ```
 
 ## 版本日志
+
+### v1.3.0 (2026-04-28)
+- PB 导出新增条件规则引擎，根据控制字字段动态决定 state block members 的存在性和可见性
+- **规则1**: `isp_miscenable=1` 时 `isp_state_word_misc` 存在并随机化，否则不显示
+- **规则2**: `isp_miscenable=1` 且 `dbt_op!=0` 时 `isp_state_word_dbmin` 和 `isp_state_word_dbmax` 存在并随机化
+- **规则3**: `isp_samplemaskenable` / `isp_dbenable` / `isp_scenable` 任一为 1 时 `isp_state_word_csc` 存在并随机化
+- **规则4**: `isp_twosided=1` 时 `isp_state_word_ba` 存在；`isp_bpres=1` 时 `isp_state_word_bb` 也存在
+- **规则5**: `isp_twosided=0` 时 index_data 中所有 primitive 的 `ix_bf_flag` 强制为 0
+- **规则6**: `isp_bpres=1` 时 `isp_state_word_fb` 存在并随机化
+- **规则7**: `pds_state` 和 `isp_state` 的所有 dword 默认随机化，每个子字段独立随机
+- 随机化机制改进：每个 struct 子字段（如 `pds_fragment_addr`、`reserved`、`pds_douti` 等）分别调用 `random.getrandbits(width)` 独立随机，不再对整个 word 统一随机
+- 新增 `get_filtered_state_block_members()` 函数根据规则过滤可见 members
+- 新增 `enforce_bf_flag_zero()` 函数强制执行 bf_flag=0 规则
+- 导出表格会根据规则自动隐藏不存在的 word，例如 `isp_miscenable=0` 时不显示 `isp_state_word_misc` / `dbmin` / `dbmax`
+
+### v1.2.3 (2026-04-28)
+- PB 导出表格统一为 `field / values / note` 三列：去掉 type、bits、hex 列，值合并为 `n'hxxx` 格式。
+- 非 integral 行将 schema 名称显示在 field 列，原始 field 名移到 note。
+- 子字段不再带父前缀（如 `pds_w0.pds_fragment_addr` 简化为 `pds_fragment_addr`）。
+- schema 名称去掉 `_s` 和 `_word` 后缀显示。
+- `index_data` 区域用 `p[n]` 表示 primitive，`original_position_coord` 区域用 `v[n]` 表示顶点、`x[n]/y[n]/z[n]` 表示坐标分量。
+- 导出时 `pds_state_word0` 和 `pds_state_word1` 随机生成 32-bit 值，填充到字段表和 `randomized_3d_memory`。
 
 ### v1.2.2 (2026-04-28)
 - 将 PB 字段 schema 和生成规则拆分到 `src/utils/pb_rules.py`，便于后续扩展条件生成规则。

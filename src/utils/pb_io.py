@@ -1,4 +1,5 @@
 import math
+import random
 import re
 import struct
 from typing import Dict, List, Optional, Tuple
@@ -9,10 +10,15 @@ from .pb_rules import (
     FULL_STATE_BLOCK_MEMBERS,
     INDEX_DATA_BITS,
     INDEX_DATA_START_BIT,
+    STATE_BLOCK_MEMBER_OFFSETS,
     STRUCT_SCHEMAS,
     STRUCT_WIDTHS,
     VERTEX_TOTAL_BIT,
+    StateBlockMember,
+    enforce_bf_flag_zero,
     fields_with_offsets,
+    get_filtered_state_block_members,
+    randomize_state_dwords,
     state_members_with_offsets,
 )
 
@@ -86,6 +92,9 @@ def save_pb_dump(path: str, config: RasterConfig, triangles: List[Triangle]) -> 
     for index, vertex in enumerate(vertices):
         _write_bits(words, COORD_START_BIT + index * COORD_BITS, COORD_BITS, _pack_position_coord(vertex))
 
+    # Rule 5: Enforce bf_flag=0 when isp_twosided=0
+    enforce_bf_flag_zero(words, len(triangles))
+
     try:
         with open(path, "w", encoding="utf-8") as f:
             f.write(format_annotated_pb_dump(words, vertices, index_words))
@@ -130,9 +139,7 @@ def format_annotated_pb_dump(
     parts = [
         "PB Dump v1 field tables",
         "",
-        _format_state_block_table(words),
-        _format_index_data_table(index_words),
-        _format_position_coord_table(vertices),
+        _format_unified_table(words, vertices, index_words),
         "Final 256-bit memory dump",
         format_memory_dump(words).rstrip(),
         "",
@@ -140,58 +147,59 @@ def format_annotated_pb_dump(
     return "\n".join(parts)
 
 
-def _format_state_block_table(words: Dict[int, int]) -> str:
-    rows = [_table_title("gpu_isp_full_state_block_s"), _table_header()]
-    for member, offset in state_members_with_offsets():
+def _format_unified_table(
+    words: Dict[int, int],
+    vertices: List[Tuple[float, float, float]],
+    index_words: List[int],
+) -> str:
+    rows = [_table_header()]
+    
+    # State block section with filtered members based on PB rules
+    filtered_members = get_filtered_state_block_members(words)
+    for member, offset in state_members_with_offsets(filtered_members):
         schema_width = STRUCT_WIDTHS[member.schema_name]
         raw = _read_bits_with_default(words, offset, schema_width)
-        rows.append(_table_row(member.name, member.schema_name, schema_width, raw, _bit_range_label(offset, schema_width)))
-        rows.extend(_format_struct_field_rows(member.name, member.schema_name, raw, offset))
-    rows.append("")
-    return "\n".join(rows)
-
-
-def _format_index_data_table(index_words: List[int]) -> str:
-    rows = [_table_title("index_data_s table"), _table_header()]
+        rows.append(_table_row(member.name, member.schema_name, schema_width, raw, ""))
+        rows.extend(_format_struct_field_rows(member.schema_name, raw))
+    
+    # Index data section with index_data title (no value display)
+    rows.append("index_data")
     for primitive_index, raw in enumerate(index_words):
-        absolute_bit = INDEX_DATA_START_BIT + primitive_index * INDEX_DATA_BITS
-        rows.append(_table_row(f"index_data[{primitive_index}]", "index_data_s", INDEX_DATA_BITS, raw, _bit_range_label(absolute_bit, INDEX_DATA_BITS)))
-        rows.extend(_format_struct_field_rows(f"index_data[{primitive_index}]", "index_data_s", raw, absolute_bit, indent=1))
-    rows.append("")
-    return "\n".join(rows)
-
-
-def _format_struct_field_rows(prefix: str, schema_name: str, raw: int, absolute_bit: int, indent: int = 1) -> List[str]:
-    rows = []
-    for field, offset in fields_with_offsets(STRUCT_SCHEMAS[schema_name]):
-        field_raw = _extract_bits(raw, offset, field.width)
-        rows.append(
-            _table_row(
-                f"{prefix}.{field.name}",
-                "integral",
-                field.width,
-                field_raw,
-                _bit_range_label(absolute_bit + offset, field.width),
-                indent=indent,
-            )
-        )
-    return rows
-
-
-def _format_position_coord_table(vertices: List[Tuple[float, float, float]]) -> str:
-    rows = [_table_title("original_position_coord table"), _table_header()]
+        rows.append(_table_row(f"p[{primitive_index}]", "integral", INDEX_DATA_BITS, raw, "", indent=1))
+        rows.extend(_format_struct_field_rows("index_data_s", raw, indent=2))
+    
+    # Position coord section with original_position_coord title (no value display)
+    rows.append("original_position_coord")
     for index, vertex in enumerate(vertices):
         absolute_bit = COORD_START_BIT + index * COORD_BITS
         raw = _pack_position_coord(vertex)
         x_raw = _extract_bits(raw, 0, 24)
         y_raw = _extract_bits(raw, 24, 24)
         z_raw = _extract_bits(raw, 48, 32)
-        rows.append(_table_row(f"original_position_coord[{index}]", "da(integral)", 80, raw, _bit_range_label(absolute_bit, COORD_BITS)))
-        rows.append(_table_row(f"x[{index}]", "q16.8", 24, x_raw, f"{_bit_range_label(absolute_bit, 24)} dec={vertex[0]:.6g}", indent=1))
-        rows.append(_table_row(f"y[{index}]", "q16.8", 24, y_raw, f"{_bit_range_label(absolute_bit + 24, 24)} dec={vertex[1]:.6g}", indent=1))
-        rows.append(_table_row(f"z[{index}]", "fp32", 32, z_raw, f"{_bit_range_label(absolute_bit + 48, 32)} dec={vertex[2]:.6g}", indent=1))
+        rows.append(_table_row(f"v[{index}]", "integral", 80, raw, "", indent=1))
+        rows.append(_table_row(f"x[{index}]", "integral", 24, x_raw, f"dec={vertex[0]:.6g}", indent=2))
+        rows.append(_table_row(f"y[{index}]", "integral", 24, y_raw, f"dec={vertex[1]:.6g}", indent=2))
+        rows.append(_table_row(f"z[{index}]", "integral", 32, z_raw, f"dec={vertex[2]:.6g}", indent=2))
+    
     rows.append("")
     return "\n".join(rows)
+
+
+def _format_struct_field_rows(schema_name: str, raw: int, indent: int = 1) -> List[str]:
+    rows = []
+    for field, offset in fields_with_offsets(STRUCT_SCHEMAS[schema_name]):
+        field_raw = _extract_bits(raw, offset, field.width)
+        rows.append(
+            _table_row(
+                field.name,
+                "integral",
+                field.width,
+                field_raw,
+                "",
+                indent=indent,
+            )
+        )
+    return rows
 
 
 def _table_title(title: str) -> str:
@@ -199,14 +207,32 @@ def _table_title(title: str) -> str:
 
 
 def _table_header() -> str:
-    return f"{'field':<58} {'type':<42} {'bits':<24} {'hex':<22} note"
+    return f"{'field':<58} {'values':<24} note"
 
 
 def _table_row(name: str, data_type: str, width: int, value: int, bits: str, note: str = "", indent: int = 0) -> str:
+    if data_type == "integral":
+        field_name = name
+        note_parts = [bits]
+    else:
+        field_name = name
+        note_parts = [_display_type_name(data_type), bits]
+    if note:
+        note_parts.append(note)
     hex_width = (width + 3) // 4
-    field_name = f"{'  ' * indent}{name}"
-    note_text = f" {note}" if note else ""
-    return f"{field_name:<58} {data_type:<42} {bits:<24} {'h' + format(value, f'0{hex_width}x'):<22}{note_text}"
+    value_text = f"{width}'h{value:0{hex_width}x}"
+    indented_name = f"{'  ' * indent}{field_name}"
+    note_text = " ".join(note_parts)
+    return f"{indented_name:<58} {value_text:<24} {note_text}"
+
+
+def _display_type_name(data_type: str) -> str:
+    name = data_type
+    if name.endswith("_s"):
+        name = name[:-2]
+    if name.endswith("_word"):
+        name = name[:-5]
+    return name
 
 
 def _bit_range_label(absolute_bit: int, width: int) -> str:
@@ -311,6 +337,8 @@ def _build_template_words(vertex_count: int, primitive_count: int) -> Dict[int, 
     )
     word_count = max(2, math.ceil(end_bit / 256))
     words = {index: DEFAULT_TEMPLATE_WORDS.get(index, 0) for index in range(word_count)}
+    # Rule 7: Randomize pds_state and isp_state dwords
+    randomize_state_dwords(words)
     words[VERTEX_TOTAL_BIT // 256] = _set_bits(words.get(VERTEX_TOTAL_BIT // 256, 0), VERTEX_TOTAL_BIT % 256, 6, vertex_count - 1)
     for index in range(primitive_count):
         _write_bits(words, INDEX_DATA_START_BIT + index * INDEX_DATA_BITS, INDEX_DATA_BITS, 0)
