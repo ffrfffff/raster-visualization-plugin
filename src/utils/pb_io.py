@@ -21,6 +21,10 @@ MEMORY_ASSIGNMENT_RE = re.compile(
     r"primitive_block_addr(?:\s*\+\s*(\d+))?\s*\]\s*=\s*256\s*'\s*h\s*([0-9a-fA-F_xXzZ?]+)",
     re.IGNORECASE,
 )
+POINT_PRIMBLK_RE = re.compile(
+    r"this_is_point_primblk.*?(?:=\s*)?(?:1\s*'\s*h)?([01])",
+    re.IGNORECASE,
+)
 POSITION_COORD_RE = re.compile(
     r"(?:original_position_coord|v)\s*\[\s*(\d+)\s*\].*?(?:80\s*)?'\s*h\s*([0-9a-fA-F_]+)",
     re.IGNORECASE,
@@ -52,8 +56,9 @@ def load_pb_dump(path: str) -> Tuple[RasterConfig, List[Triangle]]:
     except OSError as exc:
         raise ValueError(f"Failed to read PB dump: {exc}") from exc
 
+    point_mode = _parse_point_primblk_literal(text)
     coords = _parse_position_coord_literals(text)
-    index_data = _parse_index_data_literals(text)
+    index_data = [] if point_mode else _parse_index_data_literals(text)
     if not coords:
         words = parse_memory_dump(text)
         coords = _extract_position_coords_from_words(words)
@@ -80,19 +85,22 @@ def save_pb_dump(path: str, config: RasterConfig, triangles: List[Triangle]) -> 
         raise ValueError(f"PB dump v1 supports at most {MAX_VERTEX_COUNT} vertices")
 
     index_words = [_pack_index_data(i * 3, i * 3 + 1, i * 3 + 2) for i in range(len(triangles))]
-    words, index_data_start_bit = _build_template_words(len(vertices), len(index_words))
-    for index, raw in enumerate(index_words):
+    this_is_point_primblk = random.getrandbits(1)
+    words, index_data_start_bit = _build_template_words(len(vertices), len(index_words), this_is_point_primblk)
+    emitted_index_words = [] if this_is_point_primblk else index_words
+    for index, raw in enumerate(emitted_index_words):
         _write_bits(words, index_data_start_bit + index * INDEX_DATA_BITS, INDEX_DATA_BITS, raw)
-    coord_start_bit = _coord_start_bit(index_data_start_bit, len(index_words))
+    coord_start_bit = _coord_start_bit(index_data_start_bit, emitted_index_words, this_is_point_primblk)
     for index, vertex in enumerate(vertices):
         _write_bits(words, coord_start_bit + index * COORD_BITS, COORD_BITS, _pack_position_coord(vertex))
 
     # Rule 5: Enforce bf_flag=0 when isp_twosided=0
-    enforce_bf_flag_zero(words, len(triangles), index_data_start_bit)
+    if emitted_index_words:
+        enforce_bf_flag_zero(words, len(triangles), index_data_start_bit)
 
     try:
         with open(path, "w", encoding="utf-8") as f:
-            f.write(format_annotated_pb_dump(words, vertices, index_words))
+            f.write(format_annotated_pb_dump(words, vertices, emitted_index_words, this_is_point_primblk))
     except OSError as exc:
         raise ValueError(f"Failed to write PB dump: {exc}") from exc
 
@@ -128,13 +136,20 @@ def format_annotated_pb_dump(
     words: Dict[int, int],
     vertices: List[Tuple[float, float, float]],
     index_words: Optional[List[int]] = None,
+    this_is_point_primblk: Optional[int] = None,
 ) -> str:
     if index_words is None:
         index_words = []
+    if this_is_point_primblk is None:
+        this_is_point_primblk = 0 if index_words else 1
     parts = [
+        "pb_instruction random block",
+        _table_header(),
+        _table_row("this_is_point_primblk", "integral", 1, this_is_point_primblk, "external control"),
+        "",
         "PB Dump v1 field tables",
         "",
-        _format_unified_table(words, vertices, index_words),
+        _format_unified_table(words, vertices, index_words, this_is_point_primblk),
         "Final 256-bit memory dump",
         format_memory_dump(words).rstrip(),
         "",
@@ -146,6 +161,7 @@ def _format_unified_table(
     words: Dict[int, int],
     vertices: List[Tuple[float, float, float]],
     index_words: List[int],
+    this_is_point_primblk: int,
 ) -> str:
     rows = [_table_header()]
     
@@ -157,11 +173,16 @@ def _format_unified_table(
         rows.append(_table_row(member.name, member.schema_name, schema_width, raw, ""))
         rows.extend(_format_struct_field_rows(member.schema_name, raw))
     
-    # Index data section with index_data title (no value display)
-    rows.append("index_data")
-    for primitive_index, raw in enumerate(index_words):
-        rows.append(_table_row(f"p[{primitive_index}]", "integral", INDEX_DATA_BITS, raw, "", indent=1))
-        rows.extend(_format_struct_field_rows("index_data_s", raw, indent=2))
+    if this_is_point_primblk:
+        point_pitch_offset = sum(STRUCT_WIDTHS[member.schema_name] for member in filtered_members)
+        raw = _read_bits_with_default(words, point_pitch_offset, STRUCT_WIDTHS["point_pitch_s"])
+        rows.append(_table_row("point_pitch", "point_pitch_s", STRUCT_WIDTHS["point_pitch_s"], raw, ""))
+        rows.extend(_format_struct_field_rows("point_pitch_s", raw))
+    else:
+        rows.append("index_data")
+        for primitive_index, raw in enumerate(index_words):
+            rows.append(_table_row(f"p[{primitive_index}]", "integral", INDEX_DATA_BITS, raw, "", indent=1))
+            rows.extend(_format_struct_field_rows("index_data_s", raw, indent=2))
     
     # Position coord section with original_position_coord title (no value display)
     rows.append("original_position_coord")
@@ -240,6 +261,11 @@ def _bit_range_label(absolute_bit: int, width: int) -> str:
     return f"addr+{start_word}[255:{start_offset}]..addr+{end_word}[{end_offset}:0]"
 
 
+def _parse_point_primblk_literal(text: str) -> int:
+    match = POINT_PRIMBLK_RE.search(text)
+    return int(match.group(1)) if match else 0
+
+
 def _parse_position_coord_literals(text: str) -> List[Tuple[float, float, float]]:
     values = []
     for match in POSITION_COORD_RE.finditer(text):
@@ -258,19 +284,30 @@ def _parse_index_data_literals(text: str) -> List[int]:
     return [raw for _, raw in sorted(values)]
 
 
-def _index_data_start_bit(words: Dict[int, int]) -> int:
+def _point_pitch_start_bit(words: Dict[int, int]) -> int:
     return sum(STRUCT_WIDTHS[member.schema_name] for member in get_filtered_state_block_members(words))
 
 
-def _coord_start_bit(index_data_start_bit: int, primitive_count: int) -> int:
-    return index_data_start_bit + primitive_count * INDEX_DATA_BITS
+def _index_data_start_bit(words: Dict[int, int]) -> int:
+    return _point_pitch_start_bit(words)
+
+
+def _has_point_pitch(words: Dict[int, int]) -> int:
+    return 1 if _extract_bits(_read_bits_with_default(words, _point_pitch_start_bit(words), STRUCT_WIDTHS["point_pitch_s"]), 0, STRUCT_WIDTHS["point_pitch_s"]) else 0
+
+
+def _coord_start_bit(payload_start_bit: int, index_words: List[int], this_is_point_primblk: int) -> int:
+    if this_is_point_primblk:
+        return payload_start_bit + STRUCT_WIDTHS["point_pitch_s"]
+    return payload_start_bit + len(index_words) * INDEX_DATA_BITS
 
 
 def _extract_position_coords_from_words(words: Dict[int, int]) -> List[Tuple[float, float, float]]:
     explicit_count = _extract_vertex_total(words)
     index_data_start_bit = _index_data_start_bit(words)
     primitive_count = explicit_count // 3 if explicit_count else _primitive_count_from_words(words, index_data_start_bit)
-    coord_start_bit = _coord_start_bit(index_data_start_bit, primitive_count)
+    index_words = [] if _has_point_pitch(words) else [0] * primitive_count
+    coord_start_bit = _coord_start_bit(index_data_start_bit, index_words, _has_point_pitch(words))
     available_count = _available_position_coord_count(words, coord_start_bit)
     if explicit_count and explicit_count <= available_count:
         count = explicit_count
@@ -348,7 +385,7 @@ def _build_triangles(coords: List[Tuple[float, float, float]], index_data: List[
     return triangles
 
 
-def _build_template_words(vertex_count: int, primitive_count: int) -> Tuple[Dict[int, int], int]:
+def _build_template_words(vertex_count: int, primitive_count: int, this_is_point_primblk: int) -> Tuple[Dict[int, int], int]:
     words: Dict[int, int] = {}
     offset = 0
 
@@ -384,7 +421,6 @@ def _build_template_words(vertex_count: int, primitive_count: int) -> Tuple[Dict
     append_random("vertex_position_comp_format_word_zero_s")
     vert_fmt1_offset = offset
     append_random("vertex_position_comp_format_word_one_s")
-    append_random("point_pitch_s")
 
     _write_bits(
         words,
@@ -393,13 +429,19 @@ def _build_template_words(vertex_count: int, primitive_count: int) -> Tuple[Dict
         vertex_count - 1,
     )
 
-    index_data_start_bit = offset
-    coord_start_bit = _coord_start_bit(index_data_start_bit, primitive_count)
-    end_bit = max(coord_start_bit + vertex_count * COORD_BITS, index_data_start_bit + primitive_count * INDEX_DATA_BITS)
+    if this_is_point_primblk:
+        append_random("point_pitch_s")
+        emitted_primitive_count = 0
+    else:
+        emitted_primitive_count = primitive_count
+
+    index_data_start_bit = offset - (STRUCT_WIDTHS["point_pitch_s"] if this_is_point_primblk else 0)
+    coord_start_bit = _coord_start_bit(index_data_start_bit, [0] * emitted_primitive_count, this_is_point_primblk)
+    end_bit = max(coord_start_bit + vertex_count * COORD_BITS, index_data_start_bit + emitted_primitive_count * INDEX_DATA_BITS)
     word_count = max(2, math.ceil(end_bit / 256))
     for index in range(word_count):
         words.setdefault(index, 0)
-    for index in range(primitive_count):
+    for index in range(emitted_primitive_count):
         _write_bits(words, index_data_start_bit + index * INDEX_DATA_BITS, INDEX_DATA_BITS, 0)
     return words, index_data_start_bit
 

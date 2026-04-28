@@ -262,7 +262,6 @@ def get_filtered_state_block_members(words: Dict[int, int]) -> List[StateBlockMe
         StateBlockMember("vertex_varying_comp_size", "vertex_varying_comp_size_word_s"),
         StateBlockMember("vertex_position_comp_format_word_zero", "vertex_position_comp_format_word_zero_s"),
         StateBlockMember("vertex_position_comp_format_word_one", "vertex_position_comp_format_word_one_s"),
-        StateBlockMember("point_pitch", "point_pitch_s"),
     ])
     
     return result
