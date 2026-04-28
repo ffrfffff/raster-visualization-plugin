@@ -177,14 +177,17 @@ def _format_pb_instruction_table(
         rows.append(_table_row(name, "integral", width, primitive_values[name], "", indent=1))
 
     rows.append(_table_parent_row("primblk_cfg", "rgx_raster_primitive_block_cfg", "@1174", indent=1))
+    in_instruction_tail = False
     for item in PRIMBLK_CFG_ROWS:
         if item == "prim_header":
-            rows.append(_table_parent_row("prim_header", "integral", "", indent=2))
+            rows.append(_table_parent_row("prim_header", "integral", "", indent=1))
             for name, width in PRIM_HEADER_FIELDS:
-                rows.append(_table_row(name, "integral", width, prim_header_values[name], "", indent=3))
+                rows.append(_table_row(name, "integral", width, prim_header_values[name], "", indent=2))
             continue
         name, width = item
-        rows.append(_table_row(name, "integral", width, primblk_values[name], "", indent=2))
+        if name == "primblk_start_byte_base_low_addr":
+            in_instruction_tail = True
+        rows.append(_table_row(name, "integral", width, primblk_values[name], "", indent=1 if in_instruction_tail else 2))
 
     return "\n".join(rows)
 
