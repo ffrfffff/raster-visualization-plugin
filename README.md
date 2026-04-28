@@ -103,7 +103,7 @@ python main.py
 - PB 生成规则独立维护在 `src/utils/pb_rules.py`，后续可继续扩展条件规则，例如根据控制变量决定某些 word 是否生成。
 - 状态块字段表按 `gpu_isp_pds_bif_pkg` 的 packed struct 展开：PDS、ISP、vertex varying/position format、point pitch 都逐字段列出。
 - 支持 24-bit `index_data_s`：`ix_index_0`、AB flag、reserved0、`ix_index_1`、BC flag、reserved1、`ix_index_2`、CA flag、BF flag 按结构体顺序打包。
-- v1 紧凑打包 state block、`point_pitch` / `index_data_s` 和 `original_position_coord`：`isp_state_word_fa/fb/ba/bb` 按 fa、fb、ba、bb 顺序写入；`this_is_point_primblk` 在独立 `pb_instruction` 随机块中生成，为 1 时显示并写入 `point_pitch`、不显示 `index_data`，为 0 时显示并写入 `index_data`、不显示 `point_pitch`；顶点坐标紧跟当前 payload 后写入，不再保留 Doc1 模板中的中间 padding；每个顶点占 80 bit，X/Y 为 24-bit signed Q16.8，Z 为 32-bit FP32。
+- v1 紧凑打包 state block、`point_pitch` / `index_data_s` 和 `original_position_coord`：`isp_state_word_fa/fb/ba/bb` 按 fa、fb、ba、bb 顺序写入；`this_is_point_primblk` 在独立 `pb_instruction` 随机块中生成，`pb_instruction` 表格同时输出 `primitive_block_instruction` 和 `primblk_cfg` 字段；为 1 时显示并写入 `point_pitch`、不显示 `index_data`，为 0 时显示并写入 `index_data`、不显示 `point_pitch`；顶点坐标紧跟当前 payload 后写入，不再保留 Doc1 模板中的中间 padding；每个顶点占 80 bit，X/Y 为 24-bit signed Q16.8，Z 为 32-bit FP32。
 - 导入时优先使用 `index_data_s` 还原 primitive 与顶点索引关系；没有 index table 时才回退为每 3 个顶点组成一个三角形。
 - 支持通过 `File > Export PB Dump...` 从当前 GUI 三角形生成 Doc1-like dump，导出文件使用统一表格：`field / values / note` 三列，值为 `n'hxxx` 格式，子字段缩进显示，非 integral 行把 schema 名称显示在 field 列；最后写最终 `256'h...` memory dump。
 - 导出时 `pds_state_word0` 和 `pds_state_word1` 每次随机生成 32-bit 值，填充到字段表和最终 memory dump。
@@ -233,6 +233,12 @@ python main.py
 ```
 
 ## 版本日志
+
+### v1.4.4 (2026-04-28)
+- PB 导出新增完整 `pb_instruction random block` 表格，包含 `primitive_block_instruction` 和 `primblk_cfg` 两个层级。
+- `primitive_block_instruction` 表输出 `vf_vertex_total`、`cs_prim_total`、`cs_mask_fmt`、`this_is_point_primblk`、PDS/ISP/vertex varying 相关控制字段。
+- `primblk_cfg` 表输出 MSAA/fragment/context 地址配置、随机 rate 配置、state word 存在标志、primitive header 和 primitive mask words。
+- `this_is_point_primblk` 继续作为 PB 外部 instruction 控制信号，驱动 `point_pitch` 与 `index_data` 的互斥显示和写入。
 
 ### v1.4.3 (2026-04-28)
 - 新增独立 `pb_instruction` 随机块，输出外部控制信号 `this_is_point_primblk`。

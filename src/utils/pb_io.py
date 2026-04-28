@@ -2,7 +2,7 @@ import math
 import random
 import re
 import struct
-from typing import Dict, List, Optional, Tuple
+from typing import Dict, List, Optional, Tuple, Union
 
 from ..models.config import RasterConfig
 from ..models.triangle import Triangle
@@ -13,6 +13,7 @@ from .pb_rules import (
     STRUCT_WIDTHS,
     enforce_bf_flag_zero,
     fields_with_offsets,
+    get_control_word_values,
     get_filtered_state_block_members,
     state_members_with_offsets,
 )
@@ -142,10 +143,10 @@ def format_annotated_pb_dump(
         index_words = []
     if this_is_point_primblk is None:
         this_is_point_primblk = 0 if index_words else 1
+    primitive_count = len(index_words) if index_words else len(vertices) // 3
     parts = [
         "pb_instruction random block",
-        _table_header(),
-        _table_row("this_is_point_primblk", "integral", 1, this_is_point_primblk, "external control"),
+        _format_pb_instruction_table(words, len(vertices), primitive_count, this_is_point_primblk),
         "",
         "PB Dump v1 field tables",
         "",
@@ -155,6 +156,300 @@ def format_annotated_pb_dump(
         "",
     ]
     return "\n".join(parts)
+
+
+def _format_pb_instruction_table(
+    words: Dict[int, int],
+    vertex_count: int,
+    primitive_count: int,
+    this_is_point_primblk: int,
+) -> str:
+    rows = [_table_header()]
+    primitive_values, primblk_values, prim_header_values = _build_pb_instruction_values(
+        words,
+        vertex_count,
+        primitive_count,
+        this_is_point_primblk,
+    )
+
+    rows.append(_table_parent_row("primitive_block_instruction", "primitive_block_instruction_c", "@5569182"))
+    for name, width in PRIMITIVE_BLOCK_INSTRUCTION_FIELDS:
+        rows.append(_table_row(name, "integral", width, primitive_values[name], "", indent=1))
+
+    rows.append(_table_parent_row("primblk_cfg", "rgx_raster_primitive_block_cfg", "@1174"))
+    for item in PRIMBLK_CFG_ROWS:
+        if item == "prim_header":
+            rows.append(_table_parent_row("prim_header", "integral", "", indent=1))
+            for name, width in PRIM_HEADER_FIELDS:
+                rows.append(_table_row(name, "integral", width, prim_header_values[name], "", indent=2))
+            continue
+        name, width = item
+        rows.append(_table_row(name, "integral", width, primblk_values[name], "", indent=1))
+
+    return "\n".join(rows)
+
+
+PRIMITIVE_BLOCK_INSTRUCTION_FIELDS = (
+    ("vf_vertex_total", 6),
+    ("cs_prim_total", 7),
+    ("cs_mask_fmt", 2),
+    ("this_is_point_primblk", 1),
+    ("index_mask_visible_prim_number", 7),
+    ("isp_scenable", 1),
+    ("vf_vpt_id_pres", 1),
+    ("pds_douti", 1),
+    ("vf_prim_id_pres", 1),
+    ("varying_number_per_vertex", 8),
+    ("cs_tsp_comp_format_size", 6),
+    ("cs_tsp_comp_table_size", 10),
+    ("cs_tsp_comp_vertex_size", 12),
+    ("enable_vertex_data_compress", 1),
+    ("enable_varying_data_compress", 1),
+)
+
+
+PRIM_HEADER_FIELDS = (
+    ("cs_type", 2),
+    ("cs_isp_state_size", 7),
+    ("cs_prim_total", 7),
+    ("cs_mask_fmt", 2),
+    ("cs_prim_base_pres", 1),
+    ("cs_prim_base_offset", 13),
+)
+
+
+PRIMBLK_CFG_ROWS: Tuple[Union[str, Tuple[str, int]], ...] = (
+    ("mt_cr_isp_msaa_tir_en", 1),
+    ("mt_cr_isp_msaa_rast_mode", 3),
+    ("mt_cr_isp_msaa_mode", 2),
+    ("effective_msaa_mode", 3),
+    ("mt_cr_frag_ctrl_screen_offset", 16),
+    ("mt_cr_frag_ctrl_screen_guardband", 16),
+    ("mt_cr_frag_screen_xmax_real", 16),
+    ("mt_cr_frag_screen_ymax_real", 16),
+    ("mt_cr_context_mapping_pm_frag_vce", 5),
+    ("mt_cr_context_mapping_frag_frag", 5),
+    ("mt_cr_isp_pixel_base_addr", 14),
+    ("mt_cr_isp_dbias_base_addr", 46),
+    ("mt_cr_isp_scissor_base_addr", 46),
+    ("mt_cr_isp_ctl_inner_mask_used_by_ps", 10),
+    ("primblk_pds_douti_enable_rate", 32),
+    ("primblk_pds_douti_disable_rate", 32),
+    ("ispa_tagwrite_disable_on_rate", 32),
+    ("ispa_tagwrite_disable_off_rate", 32),
+    ("ispa_objtype_triangle_rate", 32),
+    ("ispa_objtype_line_rate", 32),
+    ("ispa_objtype_point_rate", 32),
+    ("ispa_passtype_opaque_rate", 32),
+    ("ispa_passtype_translucent_rate", 32),
+    ("ispa_passtype_punchthrough_rate", 32),
+    ("ispa_passtype_fast_punchthrough_rate", 32),
+    ("ispa_dcmpmode_never_rate", 32),
+    ("ispa_dcmpmode_less_rate", 32),
+    ("ispa_dcmpmode_equal_rate", 32),
+    ("ispa_dcmpmode_lessequal_rate", 32),
+    ("ispa_dcmpmode_greater_rate", 32),
+    ("ispa_dcmpmode_notequal_rate", 32),
+    ("ispa_dcmpmode_greaterequal_rate", 32),
+    ("ispa_dcmpmode_always_rate", 32),
+    ("ispb_scmpmode_never_rate", 32),
+    ("ispb_scmpmode_less_rate", 32),
+    ("ispb_scmpmode_equal_rate", 32),
+    ("ispb_scmpmode_lessequal_rate", 32),
+    ("ispb_scmpmode_greater_rate", 32),
+    ("ispb_scmpmode_notequal_rate", 32),
+    ("ispb_scmpmode_greaterequal_rate", 32),
+    ("ispb_scmpmode_always_rate", 32),
+    ("isp_scenable_enable_rate", 32),
+    ("isp_scenable_disable_rate", 32),
+    ("isp_dbenable_enable_rate", 32),
+    ("isp_dbenable_disable_rate", 32),
+    ("isp_oqenable_enable_rate", 32),
+    ("isp_oqenable_disable_rate", 32),
+    ("isp_upass_enable_rate", 32),
+    ("isp_upass_disable_rate", 32),
+    ("isp_samplemask_enable_rate", 32),
+    ("isp_samplemask_disable_rate", 32),
+    ("cs_prim_total_zero_rate", 32),
+    ("cs_prim_total_nonzero_rate", 32),
+    ("enable_vertex_data_compress_rate", 32),
+    ("disable_vertex_data_compress_rate", 32),
+    ("enable_varying_data_compress_rate", 32),
+    ("disable_varying_data_compress_rate", 32),
+    ("primblk_start_byte_base_low_addr", 8),
+    ("prim_mask_word0_exist", 1),
+    ("prim_mask_word1_exist", 1),
+    ("prim_mask_word2_exist", 1),
+    ("primblk_instruction_size", 10),
+    ("isp_state_fb_exist", 1),
+    ("isp_state_ba_exist", 1),
+    ("isp_state_bb_exist", 1),
+    ("isp_state_csc_exist", 1),
+    ("isp_state_misc_exist", 1),
+    ("isp_state_dbmin_exist", 1),
+    ("isp_state_dbmax_exist", 1),
+    ("vertex_total_real", 6),
+    ("primitive_total_real", 7),
+    ("ceil_half_vertex_total", 6),
+    ("ceil_half_primitive_total", 7),
+    ("varying_comp_format_number_total", 8),
+    "prim_header",
+    ("primblk_base_addr", 40),
+    ("prim_mask_word0", 32),
+    ("prim_mask_word0.byte_mask", 4),
+    ("prim_mask_word0.bit_mask", 4),
+    ("prim_mask_word0.index_mask", 8),
+    ("prim_mask_word0.reserved", 4),
+    ("prim_mask_word0[3]", 3),
+    ("prim_mask_word0[2]", 3),
+    ("prim_mask_word0[1]", 3),
+    ("prim_mask_word0[0]", 3),
+    ("prim_mask_word1", 32),
+    ("prim_mask_word1.byte_mask", 4),
+    ("prim_mask_word1.bit_mask", 4),
+    ("prim_mask_word2", 32),
+    ("prim_mask_word2.byte_mask", 4),
+    ("prim_mask_word2.bit_mask", 4),
+    ("unmerged_byte_based_prim_mask_word0", 32),
+    ("unmerged_byte_based_prim_mask_word1", 32),
+    ("unmerged_byte_based_prim_mask_word2", 32),
+)
+
+
+
+def _build_pb_instruction_values(
+    words: Dict[int, int],
+    vertex_count: int,
+    primitive_count: int,
+    this_is_point_primblk: int,
+) -> Tuple[Dict[str, int], Dict[str, int], Dict[str, int]]:
+    control_values = get_control_word_values(words)
+    filtered_members = get_filtered_state_block_members(words)
+    state_names = {member.name for member in filtered_members}
+    vertex_varying = _read_member_struct(words, filtered_members, "vertex_varying_comp_size")
+    vertex_format_one = _read_member_struct(words, filtered_members, "vertex_position_comp_format_word_one")
+    pds_word1 = _read_member_struct(words, filtered_members, "pds_state_word1")
+    vf_vertex_total = max(0, min(vertex_count - 1, 63))
+    cs_prim_total = max(0, min(primitive_count, 127))
+    cs_mask_fmt = 2
+    varying_number = 0x77
+    primitive_values = {name: 0 for name, _ in PRIMITIVE_BLOCK_INSTRUCTION_FIELDS}
+    primitive_values.update({
+        "vf_vertex_total": vf_vertex_total,
+        "cs_prim_total": cs_prim_total,
+        "cs_mask_fmt": cs_mask_fmt,
+        "this_is_point_primblk": this_is_point_primblk,
+        "index_mask_visible_prim_number": 0 if this_is_point_primblk else cs_prim_total,
+        "isp_scenable": control_values.get("isp_scenable", 0),
+        "vf_vpt_id_pres": vertex_format_one.get("vf_vpt_id_pres", 0),
+        "pds_douti": pds_word1.get("pds_douti", 0),
+        "vf_prim_id_pres": vertex_format_one.get("vf_prim_id_pres", 0),
+        "varying_number_per_vertex": varying_number,
+        "cs_tsp_comp_format_size": vertex_varying.get("cs_tsp_comp_format_size", 0),
+        "cs_tsp_comp_table_size": vertex_varying.get("cs_tsp_comp_table_size", 0),
+        "cs_tsp_comp_vertex_size": vertex_varying.get("cs_tsp_comp_vertex_size", 0),
+    })
+    prim_header_values = {
+        "cs_type": 0,
+        "cs_isp_state_size": min(len(filtered_members), 127),
+        "cs_prim_total": cs_prim_total,
+        "cs_mask_fmt": cs_mask_fmt,
+        "cs_prim_base_pres": 0,
+        "cs_prim_base_offset": 0,
+    }
+    primblk_values = _default_primblk_cfg_values()
+    prim_mask_word0 = _build_prim_mask_word(min(primitive_count, 4), 0)
+    prim_mask_word1 = _build_prim_mask_word(max(0, min(primitive_count - 4, 4)), 4)
+    prim_mask_word2 = _build_prim_mask_word(max(0, min(primitive_count - 8, 4)), 8)
+    instruction_bits = sum(width for _, width in PRIMITIVE_BLOCK_INSTRUCTION_FIELDS)
+    state_bits = sum(STRUCT_WIDTHS[member.schema_name] for member in filtered_members)
+    payload_bits = STRUCT_WIDTHS["point_pitch_s"] if this_is_point_primblk else primitive_count * INDEX_DATA_BITS
+    coord_bits = vertex_count * COORD_BITS
+    primblk_values.update({
+        "prim_mask_word0_exist": 1 if primitive_count > 0 else 0,
+        "prim_mask_word1_exist": 1 if primitive_count > 4 else 0,
+        "prim_mask_word2_exist": 1 if primitive_count > 8 else 0,
+        "primblk_instruction_size": min(math.ceil((instruction_bits + state_bits + payload_bits + coord_bits) / 8), 1023),
+        "isp_state_fb_exist": 1 if "isp_state_word_fb" in state_names else 0,
+        "isp_state_ba_exist": 1 if "isp_state_word_ba" in state_names else 0,
+        "isp_state_bb_exist": 1 if "isp_state_word_bb" in state_names else 0,
+        "isp_state_csc_exist": 1 if "isp_state_word_csc" in state_names else 0,
+        "isp_state_misc_exist": 1 if "isp_state_word_misc" in state_names else 0,
+        "isp_state_dbmin_exist": 1 if "isp_state_word_dbmin" in state_names else 0,
+        "isp_state_dbmax_exist": 1 if "isp_state_word_dbmax" in state_names else 0,
+        "vertex_total_real": vf_vertex_total,
+        "primitive_total_real": cs_prim_total,
+        "ceil_half_vertex_total": min(math.ceil(vertex_count / 2), 63),
+        "ceil_half_primitive_total": min(math.ceil(primitive_count / 2), 127),
+        "varying_comp_format_number_total": varying_number,
+        "prim_mask_word0": prim_mask_word0,
+        "prim_mask_word1": prim_mask_word1,
+        "prim_mask_word2": prim_mask_word2,
+        "unmerged_byte_based_prim_mask_word0": prim_mask_word0,
+        "unmerged_byte_based_prim_mask_word1": prim_mask_word1,
+        "unmerged_byte_based_prim_mask_word2": prim_mask_word2,
+    })
+    for word_name, raw in (("prim_mask_word0", prim_mask_word0), ("prim_mask_word1", prim_mask_word1), ("prim_mask_word2", prim_mask_word2)):
+        primblk_values[f"{word_name}.byte_mask"] = _extract_bits(raw, 0, 4)
+        primblk_values[f"{word_name}.bit_mask"] = _extract_bits(raw, 4, 4)
+    primblk_values.update({
+        "prim_mask_word0.index_mask": _extract_bits(prim_mask_word0, 8, 8),
+        "prim_mask_word0.reserved": _extract_bits(prim_mask_word0, 16, 4),
+        "prim_mask_word0[0]": _extract_bits(prim_mask_word0, 20, 3),
+        "prim_mask_word0[1]": _extract_bits(prim_mask_word0, 23, 3),
+        "prim_mask_word0[2]": _extract_bits(prim_mask_word0, 26, 3),
+        "prim_mask_word0[3]": _extract_bits(prim_mask_word0, 29, 3),
+    })
+    return primitive_values, primblk_values, prim_header_values
+
+
+def _default_primblk_cfg_values() -> Dict[str, int]:
+    values = {name: 0 for item in PRIMBLK_CFG_ROWS if item != "prim_header" for name, _ in [item]}
+    for name in values:
+        if name.endswith("_rate"):
+            values[name] = 50
+    values.update({
+        "mt_cr_isp_msaa_rast_mode": 3,
+        "mt_cr_isp_msaa_mode": 1,
+        "effective_msaa_mode": 1,
+        "mt_cr_frag_ctrl_screen_offset": 0xC400,
+        "mt_cr_frag_ctrl_screen_guardband": 0x30D7,
+        "mt_cr_frag_screen_xmax_real": 0x080D,
+        "mt_cr_frag_screen_ymax_real": 0x000A,
+        "mt_cr_context_mapping_pm_frag_vce": 0x1F,
+        "mt_cr_context_mapping_frag_frag": 0x1F,
+        "mt_cr_isp_pixel_base_addr": 0x2AC4,
+        "mt_cr_isp_dbias_base_addr": 0x8048E3B78D0,
+        "mt_cr_isp_scissor_base_addr": 0x167C08A22770,
+        "cs_prim_total_zero_rate": 1,
+        "cs_prim_total_nonzero_rate": 99,
+        "enable_vertex_data_compress_rate": 0,
+        "disable_vertex_data_compress_rate": 100,
+        "enable_varying_data_compress_rate": 0,
+        "disable_varying_data_compress_rate": 100,
+    })
+    return values
+
+
+def _read_member_struct(words: Dict[int, int], members, member_name: str) -> Dict[str, int]:
+    offset = 0
+    for member in members:
+        width = STRUCT_WIDTHS[member.schema_name]
+        if member.name == member_name:
+            return _unpack_struct(member.schema_name, _read_bits_with_default(words, offset, width))
+        offset += width
+    return {}
+
+
+def _build_prim_mask_word(count: int, base_index: int) -> int:
+    raw = 0
+    mask = (1 << min(max(count, 0), 4)) - 1 if count > 0 else 0
+    raw |= mask
+    raw |= mask << 4
+    raw |= mask << 8
+    for slot in range(4):
+        raw |= ((base_index + slot) & 0x7) << (20 + slot * 3)
+    return raw
 
 
 def _format_unified_table(
@@ -219,6 +514,12 @@ def _format_struct_field_rows(schema_name: str, raw: int, indent: int = 1) -> Li
 
 def _table_title(title: str) -> str:
     return title
+
+
+def _table_parent_row(name: str, data_type: str, note: str = "", indent: int = 0) -> str:
+    field_name = f"{'  ' * indent}{name}"
+    note_text = " ".join(part for part in (_display_type_name(data_type), note) if part)
+    return f"{field_name:<58} {'-':<24} {note_text}"
 
 
 def _table_header() -> str:
