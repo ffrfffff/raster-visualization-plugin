@@ -100,10 +100,12 @@ python main.py
 - 支持通过 `File > Import PB Dump...` 导入 Doc1-like 硬件验证环境 dump。
 - 支持解析 `randomized_3d_memory[frag_vce][primitive_block_addr+N] = 256'h...;` 形式的 256-bit SystemVerilog memory word。
 - `256'h...` 的最右侧是 bit0，字段按低 bit 到高 bit 对齐；插件内部按这个规则拆分和重新打包。
+- 状态块字段表按 `gpu_isp_pds_bif_pkg` 的 packed struct 展开：PDS、ISP、vertex varying/position format、point pitch 都逐字段列出。
+- 支持 24-bit `index_data_s`：`ix_index_0`、AB flag、reserved0、`ix_index_1`、BC flag、reserved1、`ix_index_2`、CA flag、BF flag 按结构体顺序打包。
 - v1 从 Doc1 模板位置解析 `original_position_coord`，每个顶点占 80 bit：X/Y 为 24-bit signed Q16.8，Z 为 32-bit FP32。
-- 每 3 个顶点组成一个三角形，导入后自动同步配置面板、三角形列表、Top View、Depth Side View、3D View 和 Popout。
-- 支持通过 `File > Export PB Dump...` 从当前 GUI 三角形生成 Doc1-like dump，导出文件先写字段展开表/坐标表，再写最终 `256'h...` memory dump，便于逐字段对应验证。
-- 当前 v1 是模板化反解析，不生成完整硬件可用的 index compression/table、control stream 或 ISP/PDS 状态。
+- 导入时优先使用 `index_data_s` 还原 primitive 与顶点索引关系；没有 index table 时才回退为每 3 个顶点组成一个三角形。
+- 支持通过 `File > Export PB Dump...` 从当前 GUI 三角形生成 Doc1-like dump，导出文件先写状态块字段表、index data 表、坐标表，再写最终 `256'h...` memory dump，便于逐字段对应验证。
+- 当前 v1 是模板化反解析，不生成完整硬件可用的 control stream、primitive instruction header 或 visibility config。
 
 ### MSAA 可视化
 - 支持 1x / 2x / 4x / 8x / 16x MSAA 切换。
@@ -194,7 +196,7 @@ python main.py
 
 ### 当前限制与后续方向
 - 当前三角形输入以 screen-space 顶点为主。
-- PB Dump 已接入 Doc1-like v1 解析/反解析，可用于顶点坐标 round-trip 和可视化验证。
+- PB Dump 已接入 Doc1-like v1 解析/反解析，可用于状态块字段、index data、顶点坐标 round-trip 和可视化验证。
 - 完整硬件 PB / 3D display list / prim instruction header / visibility config 语义解析仍在后续扩展中。
 - 后续可扩展为从 PB 序列更新 depth buffer、depth test 和最终可见性结果。
 - 后续可增加保存/加载场景、导入导出三角形和更完整的硬件命令解析。
@@ -228,6 +230,11 @@ python main.py
 ```
 
 ## 版本日志
+
+### v1.2.1 (2026-04-28)
+- PB Dump 解析/反解析改为按 `gpu_isp_pds_bif_pkg` packed struct schema 展开状态块字段。
+- 新增 `index_data_s` 表生成与解析，导入时按 index data 还原每个 primitive 的 3 个顶点索引。
+- PB 导出现在包含状态块字段表、index data 表、original_position_coord 表和最终 256-bit memory dump，方便逐字段对齐验证。
 
 ### v1.2.0 (2026-04-27)
 - 新增 PB Dump 导入/导出 v1，支持 Doc1-like 硬件验证环境 256-bit memory dump。
