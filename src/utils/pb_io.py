@@ -53,6 +53,10 @@ class PbInstructionRandom:
     primblk_values: Dict[str, int]
     prim_header_values: Dict[str, int]
 
+    @property
+    def prim_header(self) -> int:
+        return _pack_concat_fields(PRIM_HEADER_FIELDS, self.prim_header_values)
+
 def load_pb_dump(path: str) -> Tuple[RasterConfig, List[Triangle]]:
     try:
         with open(path, "r", encoding="utf-8") as f:
@@ -179,14 +183,17 @@ def _format_pb_instruction_table(instruction: PbInstructionRandom) -> str:
     in_instruction_tail = False
     for item in PRIMBLK_CFG_ROWS:
         if item == "prim_header":
-            rows.append(_table_row("prim_header", "integral", 32, _pack_fields(PRIM_HEADER_FIELDS, prim_header_values), "", indent=1))
+            rows.append(_table_row("prim_header", "integral", 32, instruction.prim_header, "", indent=1))
             for name, width in PRIM_HEADER_FIELDS:
                 rows.append(_table_row(name, "integral", width, prim_header_values[name], "", indent=2))
             continue
         name, width = item
         if name == "primblk_start_byte_base_low_addr":
             in_instruction_tail = True
-        rows.append(_table_row(name, "integral", width, primblk_values[name], "", indent=1 if in_instruction_tail else 2))
+        indent = 1 if in_instruction_tail else 2
+        parent_fields = PACKED_PRIMBLK_CFG_FIELDS.get(name)
+        value = _pack_concat_fields(parent_fields, primblk_values) if parent_fields is not None else primblk_values[name]
+        rows.append(_table_row(name, "integral", width, value, "", indent=indent))
 
     return "\n".join(rows)
 
@@ -218,6 +225,37 @@ PRIM_HEADER_FIELDS = (
     ("cs_prim_base_pres", 1),
     ("cs_prim_base_offset", 13),
 )
+
+
+PRIM_MASK_WORD0_FIELDS = (
+    ("prim_mask_word0.byte_mask", 4),
+    ("prim_mask_word0.bit_mask", 4),
+    ("prim_mask_word0.index_mask", 8),
+    ("prim_mask_word0.reserved", 4),
+    ("prim_mask_word0[3]", 3),
+    ("prim_mask_word0[2]", 3),
+    ("prim_mask_word0[1]", 3),
+    ("prim_mask_word0[0]", 3),
+)
+
+
+PRIM_MASK_WORD1_FIELDS = (
+    ("prim_mask_word1.byte_mask", 4),
+    ("prim_mask_word1.bit_mask", 4),
+)
+
+
+PRIM_MASK_WORD2_FIELDS = (
+    ("prim_mask_word2.byte_mask", 4),
+    ("prim_mask_word2.bit_mask", 4),
+)
+
+
+PACKED_PRIMBLK_CFG_FIELDS = {
+    "prim_mask_word0": PRIM_MASK_WORD0_FIELDS,
+    "prim_mask_word1": PRIM_MASK_WORD1_FIELDS,
+    "prim_mask_word2": PRIM_MASK_WORD2_FIELDS,
+}
 
 
 PRIMBLK_CFG_ROWS: Tuple[Union[str, Tuple[str, int]], ...] = (
@@ -331,6 +369,8 @@ def _randomize_pb_instruction() -> PbInstructionRandom:
     }
 
     primblk_values = _random_primblk_cfg_values()
+    for name, fields in PACKED_PRIMBLK_CFG_FIELDS.items():
+        primblk_values[name] = _pack_concat_fields(fields, primblk_values)
     return PbInstructionRandom(primitive_values, primblk_values, prim_header_values)
 
 
@@ -353,20 +393,21 @@ def _apply_pb_memory_constraints(
 
 
 def _random_primblk_cfg_values() -> Dict[str, int]:
-    return {
-        name: random.getrandbits(width)
-        for item in PRIMBLK_CFG_ROWS
-        if item != "prim_header"
-        for name, width in [item]
-    }
+    values = {}
+    for item in PRIMBLK_CFG_ROWS:
+        if item == "prim_header":
+            continue
+        name, width = item
+        if name in PACKED_PRIMBLK_CFG_FIELDS:
+            continue
+        values[name] = random.getrandbits(width)
+    return values
 
 
-def _pack_fields(fields: Tuple[Tuple[str, int], ...], values: Dict[str, int]) -> int:
+def _pack_concat_fields(fields: Tuple[Tuple[str, int], ...], values: Dict[str, int]) -> int:
     raw = 0
-    offset = 0
     for name, width in fields:
-        raw |= (values[name] & ((1 << width) - 1)) << offset
-        offset += width
+        raw = (raw << width) | (values[name] & ((1 << width) - 1))
     return raw
 
 

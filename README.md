@@ -234,6 +234,11 @@ python main.py
 
 ## 版本日志
 
+### v1.4.5 (2026-04-28)
+- `prim_header` 父值改为严格按 `{cs_type, cs_isp_state_size, cs_prim_total, cs_mask_fmt, cs_prim_base_pres, cs_prim_base_offset}` 拼接，父字段本身不再独立随机。
+- `prim_mask_word0`、`prim_mask_word1`、`prim_mask_word2` 同样由各自子字段拼接生成，避免父子值不一致。
+- 修复 stop hook 对 `git status --short` 路径的解析，避免 ` M README.md` 被误读成 `EADME.md` 后错误拦截。
+
 ### v1.4.4 (2026-04-28)
 - 拆分 `pb_instruction` 随机、PB memory 随机和约束逻辑，导出流程改为先随机 `primitive_block_instruction`，再基于其中的 `this_is_point_primblk` 随机 PB payload。
 - `prim_header` 父行现在显示由 `cs_type`、`cs_isp_state_size`、`cs_prim_total`、`cs_mask_fmt`、`cs_prim_base_pres`、`cs_prim_base_offset` 按顺序拼成的 32-bit 值。
