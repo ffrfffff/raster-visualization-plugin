@@ -234,6 +234,12 @@ python main.py
 
 ## 版本日志
 
+### v1.4.0 (2026-04-28)
+- 移除 `DEFAULT_TEMPLATE_WORDS` 预定义模板值，所有 memory word 初始化为 0 后按需随机化
+- 新增 `_randomize_vertex_format()` 函数，随机化 vertex format 和 point pitch 的所有子字段
+- 现在所有 state block 字段（pds_state、isp_state、vertex_varying_comp_size、vertex_position_comp_format_word_zero/one、point_pitch）全部独立随机化
+- 修复 `vertex_position_comp_format_word_zero` 缺少 `cs_isp_comp_format_y2` 字段的问题，从 28-bit 修正为 32-bit
+
 ### v1.3.0 (2026-04-28)
 - PB 导出新增条件规则引擎，根据控制字字段动态决定 state block members 的存在性和可见性
 - **规则1**: `isp_miscenable=1` 时 `isp_state_word_misc` 存在并随机化，否则不显示
