@@ -11,6 +11,13 @@ python main.py
 
 ## 功能说明
 
+
+### 输入/输出目录
+- 工程根目录提供 `input/` 和 `output/` 两个固定目录，并通过 `.gitkeep` 保留空目录结构。
+- `input/` 用于放置待导入文件，例如 JSON 场景文件、PB dump `.sv/.txt/.pb` 文件；GUI 导入对话框默认从该目录打开。
+- `output/` 用于保存导出文件，例如 `File > Export PB Dump...` 生成的 `.sv` 文件；GUI 导出对话框默认写入该目录。
+- 两个目录中的实际数据文件默认不提交到 git，只提交目录本身，方便放置本地验证资料。
+
 ### 配置参数面板
 - **MSAA**: 支持 1x / 2x / 4x / 8x / 16x，采样点使用标准旋转网格（Rotated Grid）模式。
 - **Screen Size**: 配置屏幕空间宽高，是 Top View / 3D View 中 screen 平面的基础范围。
@@ -87,6 +94,16 @@ python main.py
 - 支持 coverage mask 输出，并在选中像素的右上角 MSAA sample pattern 预览框中显示。
 - 支持 MSAA resolve：根据 sample 覆盖率和深度结果混合颜色。
 - 状态栏显示三角形数量、光栅化像素数量和深度范围。
+
+
+### PB Dump 导入/导出 v1
+- 支持通过 `File > Import PB Dump...` 导入 Doc1-like 硬件验证环境 dump。
+- 支持解析 `randomized_3d_memory[frag_vce][primitive_block_addr+N] = 256'h...;` 形式的 256-bit SystemVerilog memory word。
+- `256'h...` 的最右侧是 bit0，字段按低 bit 到高 bit 对齐；插件内部按这个规则拆分和重新打包。
+- v1 从 Doc1 模板位置解析 `original_position_coord`，每个顶点占 80 bit：X/Y 为 24-bit signed Q16.8，Z 为 32-bit FP32。
+- 每 3 个顶点组成一个三角形，导入后自动同步配置面板、三角形列表、Top View、Depth Side View、3D View 和 Popout。
+- 支持通过 `File > Export PB Dump...` 从当前 GUI 三角形生成 Doc1-like dump，导出文件先写字段展开表/坐标表，再写最终 `256'h...` memory dump，便于逐字段对应验证。
+- 当前 v1 是模板化反解析，不生成完整硬件可用的 index compression/table、control stream 或 ISP/PDS 状态。
 
 ### MSAA 可视化
 - 支持 1x / 2x / 4x / 8x / 16x MSAA 切换。
@@ -177,7 +194,8 @@ python main.py
 
 ### 当前限制与后续方向
 - 当前三角形输入以 screen-space 顶点为主。
-- PB / 3D display list / prim instruction header / visibility config 解析还未接入。
+- PB Dump 已接入 Doc1-like v1 解析/反解析，可用于顶点坐标 round-trip 和可视化验证。
+- 完整硬件 PB / 3D display list / prim instruction header / visibility config 语义解析仍在后续扩展中。
 - 后续可扩展为从 PB 序列更新 depth buffer、depth test 和最终可见性结果。
 - 后续可增加保存/加载场景、导入导出三角形和更完整的硬件命令解析。
 
@@ -186,6 +204,8 @@ python main.py
 ```
 ├── main.py                          # 应用入口
 ├── requirements.txt
+├── input/                         # 本地导入文件目录，内容不入库
+├── output/                        # 本地导出文件目录，内容不入库
 ├── src/
 │   ├── main_window.py               # 主窗口
 │   ├── models/
@@ -203,10 +223,20 @@ python main.py
 │   └── utils/
 │       ├── geometry.py              # 几何计算 + MSAA采样位置
 │       ├── fixed_point.py           # Q16.8 / FP32 格式转换
-│       └── scene_io.py              # JSON 场景导入
+│       ├── scene_io.py              # JSON 场景导入
+│       └── pb_io.py                 # PB Dump v1 解析/反解析
 ```
 
 ## 版本日志
+
+### v1.2.0 (2026-04-27)
+- 新增 PB Dump 导入/导出 v1，支持 Doc1-like 硬件验证环境 256-bit memory dump。
+- 正确按 `256'h...` 右侧低 bit 的规则解析和生成 `primitive_block_addr+N` memory word。
+- 支持 80-bit `original_position_coord` 顶点格式：X/Y 为 24-bit signed Q16.8，Z 为 32-bit FP32。
+- 导入 PB dump 后自动同步三角形列表、Top/Depth/3D 视图和 Popout；导出包含字段表、坐标表和最终 memory dump，便于插件 round-trip 和逐项对齐验证。
+- `.gitignore` 已排除 Doc1 原始文档和解包目录，避免临时验证资料进入版本库。
+- 当前 PB 反解析为 Doc1 模板化 v1，不保证生成完整硬件可执行 PB/control stream。
+- 输入/输出目录内容通过 `.gitignore` 排除，只保留 `input/.gitkeep` 和 `output/.gitkeep`，导入默认读 `input/`，导出默认写 `output/`。
 
 ### v1.1.0 (2026-04-27)
 - 新增 JSON 场景导入功能，可通过 `File > Import Scene...` 一次性读取完整配置和全部三角形

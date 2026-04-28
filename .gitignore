@@ -19,3 +19,11 @@ env/
 
 *.log
 .env
+
+Doc1.docx
+doc1_extracted/
+
+input/*
+!input/.gitkeep
+output/*
+!output/.gitkeep

@@ -5,6 +5,7 @@ from PyQt6.QtWidgets import (
     QSpinBox, QScrollBar, QGridLayout, QFileDialog
 )
 from PyQt6.QtCore import Qt
+from pathlib import Path
 from .models.config import RasterConfigModel
 from .models.triangle import Triangle, TriangleListModel
 from .views.config_panel import ConfigPanel
@@ -15,12 +16,16 @@ from .views.triangle_list_panel import TriangleListPanel
 from .views.popout_window import PopoutWindow
 from .renderers.software_rasterizer import SoftwareRasterizer
 from .utils.scene_io import load_scene
+from .utils.pb_io import load_pb_dump, save_pb_dump
 
 
 class MainWindow(QMainWindow):
     """主窗口"""
 
     SCROLL_PAN_SCALE = 0.25
+    PROJECT_ROOT = Path(__file__).resolve().parent.parent
+    INPUT_DIR = PROJECT_ROOT / "input"
+    OUTPUT_DIR = PROJECT_ROOT / "output"
 
     def __init__(self):
         super().__init__()
@@ -254,7 +259,9 @@ class MainWindow(QMainWindow):
         file_menu = menubar.addMenu("File")
         file_menu.addAction("New", self._on_new)
         file_menu.addAction("Import Scene...", self._on_import)
+        file_menu.addAction("Import PB Dump...", self._on_import_pb)
         file_menu.addAction("Export Triangles...", self._on_export)
+        file_menu.addAction("Export PB Dump...", self._on_export_pb)
         file_menu.addSeparator()
         file_menu.addAction("Exit", self.close)
 
@@ -453,7 +460,7 @@ class MainWindow(QMainWindow):
         path, _ = QFileDialog.getOpenFileName(
             self,
             "Import Scene",
-            "",
+            str(self.INPUT_DIR),
             "JSON Files (*.json);;All Files (*)"
         )
         if not path:
@@ -488,8 +495,45 @@ class MainWindow(QMainWindow):
         self._update_views()
         self.triangle_panel.update_triangles(self.triangle_model.triangles)
 
+    def _on_import_pb(self):
+        path, _ = QFileDialog.getOpenFileName(
+            self,
+            "Import PB Dump",
+            str(self.INPUT_DIR),
+            "PB Dump Files (*.sv *.txt *.pb);;All Files (*)"
+        )
+        if not path:
+            return
+
+        try:
+            config, triangles = load_pb_dump(path)
+        except ValueError as exc:
+            QMessageBox.warning(self, "Import Failed", str(exc))
+            return
+
+        self._apply_imported_scene(config, triangles)
+        QMessageBox.information(self, "Import Complete", f"Imported {len(triangles)} triangle(s) from PB dump.")
+
     def _on_export(self):
         QMessageBox.information(self, "Export", "Export feature coming soon")
+
+    def _on_export_pb(self):
+        path, _ = QFileDialog.getSaveFileName(
+            self,
+            "Export PB Dump",
+            str(self.OUTPUT_DIR / "scene.sv"),
+            "SystemVerilog Files (*.sv);;Text Files (*.txt);;All Files (*)"
+        )
+        if not path:
+            return
+
+        try:
+            save_pb_dump(path, self.config_model.config, self.triangle_model.triangles)
+        except ValueError as exc:
+            QMessageBox.warning(self, "Export Failed", str(exc))
+            return
+
+        QMessageBox.information(self, "Export Complete", f"Exported {len(self.triangle_model.triangles)} triangle(s) to PB dump.")
 
     def _reset_zoom(self):
         self.raster_view.reset_view()
