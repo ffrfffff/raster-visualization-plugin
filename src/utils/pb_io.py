@@ -7,18 +7,13 @@ from typing import Dict, List, Optional, Tuple
 from ..models.config import RasterConfig
 from ..models.triangle import Triangle
 from .pb_rules import (
-    FULL_STATE_BLOCK_MEMBERS,
     INDEX_DATA_BITS,
-    INDEX_DATA_START_BIT,
-    STATE_BLOCK_MEMBER_OFFSETS,
+    STRUCT_FIELD_OFFSETS,
     STRUCT_SCHEMAS,
     STRUCT_WIDTHS,
-    VERTEX_TOTAL_BIT,
-    StateBlockMember,
     enforce_bf_flag_zero,
     fields_with_offsets,
     get_filtered_state_block_members,
-    randomize_state_dwords,
     state_members_with_offsets,
 )
 
@@ -85,15 +80,15 @@ def save_pb_dump(path: str, config: RasterConfig, triangles: List[Triangle]) -> 
         raise ValueError(f"PB dump v1 supports at most {MAX_VERTEX_COUNT} vertices")
 
     index_words = [_pack_index_data(i * 3, i * 3 + 1, i * 3 + 2) for i in range(len(triangles))]
-    words = _build_template_words(len(vertices), len(index_words))
+    words, index_data_start_bit = _build_template_words(len(vertices), len(index_words))
     for index, raw in enumerate(index_words):
-        _write_bits(words, INDEX_DATA_START_BIT + index * INDEX_DATA_BITS, INDEX_DATA_BITS, raw)
-    coord_start_bit = _coord_start_bit(len(index_words))
+        _write_bits(words, index_data_start_bit + index * INDEX_DATA_BITS, INDEX_DATA_BITS, raw)
+    coord_start_bit = _coord_start_bit(index_data_start_bit, len(index_words))
     for index, vertex in enumerate(vertices):
         _write_bits(words, coord_start_bit + index * COORD_BITS, COORD_BITS, _pack_position_coord(vertex))
 
     # Rule 5: Enforce bf_flag=0 when isp_twosided=0
-    enforce_bf_flag_zero(words, len(triangles))
+    enforce_bf_flag_zero(words, len(triangles), index_data_start_bit)
 
     try:
         with open(path, "w", encoding="utf-8") as f:
@@ -263,14 +258,19 @@ def _parse_index_data_literals(text: str) -> List[int]:
     return [raw for _, raw in sorted(values)]
 
 
-def _coord_start_bit(primitive_count: int) -> int:
-    return INDEX_DATA_START_BIT + primitive_count * INDEX_DATA_BITS
+def _index_data_start_bit(words: Dict[int, int]) -> int:
+    return sum(STRUCT_WIDTHS[member.schema_name] for member in get_filtered_state_block_members(words))
+
+
+def _coord_start_bit(index_data_start_bit: int, primitive_count: int) -> int:
+    return index_data_start_bit + primitive_count * INDEX_DATA_BITS
 
 
 def _extract_position_coords_from_words(words: Dict[int, int]) -> List[Tuple[float, float, float]]:
     explicit_count = _extract_vertex_total(words)
-    primitive_count = explicit_count // 3 if explicit_count else _primitive_count_from_words(words)
-    coord_start_bit = _coord_start_bit(primitive_count)
+    index_data_start_bit = _index_data_start_bit(words)
+    primitive_count = explicit_count // 3 if explicit_count else _primitive_count_from_words(words, index_data_start_bit)
+    coord_start_bit = _coord_start_bit(index_data_start_bit, primitive_count)
     available_count = _available_position_coord_count(words, coord_start_bit)
     if explicit_count and explicit_count <= available_count:
         count = explicit_count
@@ -288,9 +288,10 @@ def _extract_position_coords_from_words(words: Dict[int, int]) -> List[Tuple[flo
 
 
 def _extract_index_data_from_words(words: Dict[int, int], primitive_count: int) -> List[int]:
+    index_data_start_bit = _index_data_start_bit(words)
     index_words = []
     for primitive_index in range(primitive_count):
-        raw = _read_bits(words, INDEX_DATA_START_BIT + primitive_index * INDEX_DATA_BITS, INDEX_DATA_BITS)
+        raw = _read_bits(words, index_data_start_bit + primitive_index * INDEX_DATA_BITS, INDEX_DATA_BITS)
         index_words.append(raw)
     return index_words
 
@@ -307,18 +308,24 @@ def _available_position_coord_count(words: Dict[int, int], coord_start_bit: int)
     return count
 
 
-def _primitive_count_from_words(words: Dict[int, int]) -> int:
-    max_bit = (max(words) + 1) * 256 if words else INDEX_DATA_START_BIT
-    remaining_bits = max(0, max_bit - INDEX_DATA_START_BIT)
+def _primitive_count_from_words(words: Dict[int, int], index_data_start_bit: int) -> int:
+    max_bit = (max(words) + 1) * 256 if words else index_data_start_bit
+    remaining_bits = max(0, max_bit - index_data_start_bit)
     return min(MAX_VERTEX_COUNT // 3, remaining_bits // (INDEX_DATA_BITS + 3 * COORD_BITS))
 
 
 def _extract_vertex_total(words: Dict[int, int]) -> int:
     try:
-        encoded_total = _read_bits(words, VERTEX_TOTAL_BIT, 6)
+        offset = 0
+        for member in get_filtered_state_block_members(words):
+            if member.name == "vertex_position_comp_format_word_one":
+                field_offset = STRUCT_FIELD_OFFSETS["vertex_position_comp_format_word_one_s"]["vf_vertex_total"]
+                encoded_total = _read_bits(words, offset + field_offset, 6)
+                return encoded_total + 1 if encoded_total else 0
+            offset += STRUCT_WIDTHS[member.schema_name]
     except ValueError:
         return 0
-    return encoded_total + 1 if encoded_total else 0
+    return 0
 
 
 def _build_triangles(coords: List[Tuple[float, float, float]], index_data: List[int]) -> List[Triangle]:
@@ -341,21 +348,67 @@ def _build_triangles(coords: List[Tuple[float, float, float]], index_data: List[
     return triangles
 
 
-def _build_template_words(vertex_count: int, primitive_count: int) -> Dict[int, int]:
-    coord_start_bit = _coord_start_bit(primitive_count)
-    end_bit = max(
-        coord_start_bit + vertex_count * COORD_BITS,
-        INDEX_DATA_START_BIT + primitive_count * INDEX_DATA_BITS,
+def _build_template_words(vertex_count: int, primitive_count: int) -> Tuple[Dict[int, int], int]:
+    words: Dict[int, int] = {}
+    offset = 0
+
+    def append_random(schema_name: str) -> int:
+        nonlocal offset
+        raw = _random_struct(schema_name)
+        _write_bits(words, offset, STRUCT_WIDTHS[schema_name], raw)
+        offset += STRUCT_WIDTHS[schema_name]
+        return raw
+
+    append_random("pds_state_word0_s")
+    append_random("pds_state_word1_s")
+    control_raw = append_random("isp_state_control_word_s")
+    control_values = _unpack_struct("isp_state_control_word_s", control_raw)
+
+    append_random("isp_state_word_a_s")
+    if control_values["isp_bpres"]:
+        append_random("isp_state_word_b_s")
+    if control_values["isp_twosided"]:
+        append_random("isp_state_word_a_s")
+        if control_values["isp_bpres"]:
+            append_random("isp_state_word_b_s")
+    if control_values["isp_samplemaskenable"] or control_values["isp_dbenable"] or control_values["isp_scenable"]:
+        append_random("isp_state_word_csc_s")
+    if control_values["isp_miscenable"]:
+        misc_raw = append_random("isp_state_word_misc_s")
+        misc_values = _unpack_struct("isp_state_word_misc_s", misc_raw)
+        if misc_values["dbt_op"] != 0:
+            append_random("isp_state_word_dbmin_s")
+            append_random("isp_state_word_dbmax_s")
+
+    append_random("vertex_varying_comp_size_word_s")
+    append_random("vertex_position_comp_format_word_zero_s")
+    vert_fmt1_offset = offset
+    append_random("vertex_position_comp_format_word_one_s")
+    append_random("point_pitch_s")
+
+    _write_bits(
+        words,
+        vert_fmt1_offset + STRUCT_FIELD_OFFSETS["vertex_position_comp_format_word_one_s"]["vf_vertex_total"],
+        6,
+        vertex_count - 1,
     )
+
+    index_data_start_bit = offset
+    coord_start_bit = _coord_start_bit(index_data_start_bit, primitive_count)
+    end_bit = max(coord_start_bit + vertex_count * COORD_BITS, index_data_start_bit + primitive_count * INDEX_DATA_BITS)
     word_count = max(2, math.ceil(end_bit / 256))
-    # Initialize all words to 0, then randomize state block fields
-    words = {index: 0 for index in range(word_count)}
-    # Rule 7: Randomize all state block dwords (pds, isp, vertex format, point pitch)
-    randomize_state_dwords(words)
-    words[VERTEX_TOTAL_BIT // 256] = _set_bits(words.get(VERTEX_TOTAL_BIT // 256, 0), VERTEX_TOTAL_BIT % 256, 6, vertex_count - 1)
+    for index in range(word_count):
+        words.setdefault(index, 0)
     for index in range(primitive_count):
-        _write_bits(words, INDEX_DATA_START_BIT + index * INDEX_DATA_BITS, INDEX_DATA_BITS, 0)
-    return words
+        _write_bits(words, index_data_start_bit + index * INDEX_DATA_BITS, INDEX_DATA_BITS, 0)
+    return words, index_data_start_bit
+
+
+def _random_struct(schema_name: str) -> int:
+    raw = 0
+    for field, offset in fields_with_offsets(STRUCT_SCHEMAS[schema_name]):
+        raw = _set_bits(raw, offset, field.width, random.getrandbits(field.width))
+    return raw
 
 
 def _pack_index_data(

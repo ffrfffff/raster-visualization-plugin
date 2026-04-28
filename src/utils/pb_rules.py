@@ -223,14 +223,8 @@ def get_filtered_state_block_members(words: Dict[int, int]) -> List[StateBlockMe
     isp_twosided = control_values.get("isp_twosided", 0)
     isp_bpres = control_values.get("isp_bpres", 0)
     
-    # Get dbt_op from misc word if misc is enabled
-    dbt_op = 0
-    if isp_miscenable:
-        misc_offset = STATE_BLOCK_MEMBER_OFFSETS["isp_state_word_misc"]
-        from .pb_io import _read_bits_with_default
-        misc_raw = _read_bits_with_default(words, misc_offset, STRUCT_WIDTHS["isp_state_word_misc_s"])
-        dbt_op = (misc_raw >> STRUCT_FIELD_OFFSETS["isp_state_word_misc_s"]["dbt_op"]) & ((1 << 2) - 1)
-    
+    from .pb_io import _read_bits_with_default
+
     # Base members that always exist (pds_state words)
     result = [
         StateBlockMember("pds_state_word0", "pds_state_word0_s"),
@@ -240,32 +234,25 @@ def get_filtered_state_block_members(words: Dict[int, int]) -> List[StateBlockMe
     # isp_state_control always exists
     result.append(StateBlockMember("isp_state_control", "isp_state_control_word_s"))
     
-    # Rule 7: pds_state dwords default to random
-    _randomize_pds_state(words)
-    
-    # Rule 6: If isp_bpres=1, then isp_state_word_fb exists
+    # isp_state words are emitted in hardware order: fa, fb, ba, bb
+    result.append(StateBlockMember("isp_state_word_fa", "isp_state_word_a_s"))
     if isp_bpres:
         result.append(StateBlockMember("isp_state_word_fb", "isp_state_word_b_s"))
-    
-    # isp_state_word_fa always exists (front face a)
-    result.append(StateBlockMember("isp_state_word_fa", "isp_state_word_a_s"))
-    
-    # Rule 4: If isp_twosided=1, then isp_state_word_ba exists
     if isp_twosided:
         result.append(StateBlockMember("isp_state_word_ba", "isp_state_word_a_s"))
-        # Rule 4: If isp_bpres=1, then isp_state_word_bb also exists
         if isp_bpres:
             result.append(StateBlockMember("isp_state_word_bb", "isp_state_word_b_s"))
-    
+
     # Rule 3: If isp_samplemaskenable or isp_dbenable or isp_scenable is 1, then isp_state_word_csc exists
     if isp_samplemaskenable or isp_dbenable or isp_scenable:
         result.append(StateBlockMember("isp_state_word_csc", "isp_state_word_csc_s"))
     
     # Rule 1: If isp_miscenable=1 then isp_state_word_misc exists
     if isp_miscenable:
+        misc_offset = sum(STRUCT_WIDTHS[member.schema_name] for member in result)
+        misc_raw = _read_bits_with_default(words, misc_offset, STRUCT_WIDTHS["isp_state_word_misc_s"])
+        dbt_op = (misc_raw >> STRUCT_FIELD_OFFSETS["isp_state_word_misc_s"]["dbt_op"]) & ((1 << 2) - 1)
         result.append(StateBlockMember("isp_state_word_misc", "isp_state_word_misc_s"))
-        
-        # Rule 2: If isp_miscenable=1 and dbt_op!=0, then dbmin/dbmax exist
         if dbt_op != 0:
             result.append(StateBlockMember("isp_state_word_dbmin", "isp_state_word_dbmin_s"))
             result.append(StateBlockMember("isp_state_word_dbmax", "isp_state_word_dbmax_s"))
@@ -368,7 +355,7 @@ def _randomize_isp_state(words: Dict[int, int]) -> None:
         _write_bits(words, dbmax_offset + field_offset, field.width, random_value)
 
 
-def enforce_bf_flag_zero(words: Dict[int, int], primitive_count: int) -> None:
+def enforce_bf_flag_zero(words: Dict[int, int], primitive_count: int, index_data_start_bit: int = INDEX_DATA_START_BIT) -> None:
     """Rule 5: If isp_twosided=0, then all prim's ix_bf_flag in index_data = 0."""
     control_values = get_control_word_values(words)
     isp_twosided = control_values.get("isp_twosided", 0)
@@ -376,9 +363,8 @@ def enforce_bf_flag_zero(words: Dict[int, int], primitive_count: int) -> None:
     if isp_twosided == 0:
         from .pb_io import _read_bits_with_default, _write_bits
         for prim_index in range(primitive_count):
-            prim_offset = INDEX_DATA_START_BIT + prim_index * INDEX_DATA_BITS
+            prim_offset = index_data_start_bit + prim_index * INDEX_DATA_BITS
             current = _read_bits_with_default(words, prim_offset, INDEX_DATA_BITS)
-            # Clear ix_bf_flag (bit 23)
             current &= ~(1 << 23)
             _write_bits(words, prim_offset, INDEX_DATA_BITS, current)
 
