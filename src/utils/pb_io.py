@@ -206,86 +206,12 @@ def format_parsed_pb_dump(
     parts = [
         "Parsed PB Dump from memory words",
         "",
-        _format_parsed_state_block_table(words),
+        _format_unified_table(words, coords, index_data, point_mode),
+        "Original 256-bit memory dump",
+        format_memory_dump(words).rstrip(),
         "",
     ]
-    if point_mode:
-        parts.append(_format_parsed_point_pitch_table(words))
-    else:
-        parts.append(_format_parsed_index_data_table(words, index_data))
-    parts.append("")
-    parts.append(_format_parsed_coord_table(coords))
-    parts.append("")
-    parts.append("Original 256-bit memory dump")
-    parts.append(format_memory_dump(words).rstrip())
-    parts.append("")
     return "\n".join(parts)
-
-
-def _format_parsed_state_block_table(words: Dict[int, int]) -> str:
-    rows = ["field\t\t\tvalues\tnote"]
-    try:
-        filtered_members = get_filtered_state_block_members(words)
-    except (ValueError, KeyError):
-        return rows[0]
-    offset = 0
-    for member in filtered_members:
-        schema = member.schema_name
-        width = STRUCT_WIDTHS[schema]
-        raw = _read_bits_with_default(words, offset, width)
-        display_name = schema.replace("_s", "").replace("_word", "")
-        rows.append(f"{display_name}\t\t\t{width}'h{raw:x}")
-        for field, field_offset in fields_with_offsets(STRUCT_SCHEMAS[schema]):
-            fv = _extract_bits(raw, field_offset, field.width)
-            rows.append(f"\t{field.name}\t\t{field.width}'h{fv:x}")
-        offset += width
-    return "\n".join(rows)
-
-
-def _format_parsed_point_pitch_table(words: Dict[int, int]) -> str:
-    offset = _point_pitch_start_bit(words)
-    raw = _read_bits_with_default(words, offset, STRUCT_WIDTHS["point_pitch_s"])
-    rows = ["field\t\t\tvalues\tnote"]
-    rows.append(f"point_pitch\t\t\t{STRUCT_WIDTHS['point_pitch_s']}'h{raw:x}")
-    for field, field_offset in fields_with_offsets(STRUCT_SCHEMAS["point_pitch_s"]):
-        fv = _extract_bits(raw, field_offset, field.width)
-        rows.append(f"\t{field.name}\t\t{field.width}'h{fv:x}")
-    return "\n".join(rows)
-
-
-def _format_parsed_index_data_table(words: Dict[int, int], index_data: List[int]) -> str:
-    rows = ["field\t\t\tvalues\tnote"]
-    for i, raw in enumerate(index_data):
-        rows.append(f"p[{i}]\t\t\t{INDEX_DATA_BITS}'h{raw:x}")
-        i0 = _extract_bits(raw, 0, 6)
-        ab = _extract_bits(raw, 6, 1)
-        i1 = _extract_bits(raw, 8, 6)
-        bc = _extract_bits(raw, 14, 1)
-        i2 = _extract_bits(raw, 16, 6)
-        ca = _extract_bits(raw, 22, 1)
-        bf = _extract_bits(raw, 23, 1)
-        rows.append(f"\tix_index_0\t\t6'h{i0:x}")
-        rows.append(f"\tix_edge_flag_ab\t\t1'h{ab:x}")
-        rows.append(f"\tix_index_1\t\t6'h{i1:x}")
-        rows.append(f"\tix_edge_flag_bc\t\t1'h{bc:x}")
-        rows.append(f"\tix_index_2\t\t6'h{i2:x}")
-        rows.append(f"\tix_edge_flag_ca\t\t1'h{ca:x}")
-        rows.append(f"\tix_bf_flag\t\t1'h{bf:x}")
-    return "\n".join(rows)
-
-
-def _format_parsed_coord_table(coords: List[Tuple[float, float, float]]) -> str:
-    rows = ["field\t\t\tvalues\tnote"]
-    for i, (x, y, z) in enumerate(coords):
-        coord_raw = _pack_position_coord((x, y, z))
-        rows.append(f"v[{i}]\t\t\t{COORD_BITS}'h{coord_raw:x}")
-        x_raw = _pack_q16_8_24(x)
-        y_raw = _pack_q16_8_24(y)
-        z_raw = _pack_fp32(z)
-        rows.append(f"\tx[{i}]\t\t24'h{x_raw:x}\tQ16.8")
-        rows.append(f"\ty[{i}]\t\t24'h{y_raw:x}\tQ16.8")
-        rows.append(f"\tz[{i}]\t\t32'h{z_raw:x}\tFP32")
-    return "\n".join(rows)
 
 
 def _format_pb_instruction_table(instruction: PbInstructionRandom) -> str:
