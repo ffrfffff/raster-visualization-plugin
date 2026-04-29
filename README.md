@@ -236,7 +236,7 @@ python main.py
 
 ### v1.4.6 (2026-04-29)
 - PB 导入后的 GUI 绘制会跳过非有限坐标/深度，并对超大视图坐标做安全裁剪，避免验证 dump 中出现 `nan`、异常 FP32 深度或超大坐标时导致 Qt 绘图参数溢出；解析表仍保留原始字段值。
-- index mode 下所有 `index_data_s` 解析完后会额外跳过 16 bit，再开始读取/写入 `original_position_coord`；解析表中显示为 `index_data_to_coord_gap`，方便对照 memory bit layout。
+- index mode 下所有 `index_data_s` 解析/写入完成后，会把 `original_position_coord` 起点向后对齐到 32-bit 边界；例如当前样例中 24-bit `index_data_s` 数量导致需要跳过 16 bit padding，解析表显示为 `index_data_to_coord_alignment`，方便对照 memory bit layout。
 - PB 导入解析现在复用导出侧紧凑布局规则，通过 `get_filtered_state_block_members()` 计算 state block 长度，GUI 导入时会先询问 primitive 数量和 vertex 数量，解析严格按输入数量确定 `index_data` 结束位置和读取的 `original_position_coord` 数量，不再用 `vf_vertex_total` 或 memory 长度反推数量；如果 `index_data` 引用超出已输入 vertex 数量的索引，解析表仍会输出，GUI 只跳过无法绘制的 primitive，保证隐藏 state word 不占 memory 空间且 `fa/fb/ba/bb` 顺序一致。
 - packed struct 子字段按 SystemVerilog 声明顺序从高 bit 到低 bit 拆分和拼接；`index_data_s` 按协议定义从最低位到最高位拆分为 `ix_index_0`、`ix_edge_flag_ab`、reserved、`ix_index_1` 等字段，确保解析表、导出表与 `randomized_3d_memory` 的父字段值一致。
 - PB 导出仍由 `pb_instruction` 中的 `this_is_point_primblk` 控制 `point_pitch` 与 `index_data` 互斥，导出时 `ispa_objtype` 与 `this_is_point_primblk` 保持一致。

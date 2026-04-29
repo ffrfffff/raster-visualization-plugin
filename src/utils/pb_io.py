@@ -39,7 +39,7 @@ INDEX_DATA_RE = re.compile(
 
 COORD_BITS = 80
 MAX_VERTEX_COUNT = 63
-INDEX_DATA_TO_COORD_GAP_BITS = 16
+INDEX_DATA_COORD_ALIGNMENT_BITS = 32
 
 DEFAULT_COLORS = [
     (255, 100, 100),
@@ -511,8 +511,10 @@ def _format_unified_table(
             rows.extend(_format_index_data_field_rows(raw, indent=2))
         payload_start_bit = sum(STRUCT_WIDTHS[member.schema_name] for member in filtered_members)
         gap_start_bit = payload_start_bit + len(index_words) * INDEX_DATA_BITS
-        gap_raw = _read_bits_with_default(words, gap_start_bit, INDEX_DATA_TO_COORD_GAP_BITS)
-        rows.append(_table_row("index_data_to_coord_gap", "integral", INDEX_DATA_TO_COORD_GAP_BITS, gap_raw, "before original_position_coord", indent=1))
+        gap_bits = _align_up(gap_start_bit, INDEX_DATA_COORD_ALIGNMENT_BITS) - gap_start_bit
+        if gap_bits:
+            gap_raw = _read_bits_with_default(words, gap_start_bit, gap_bits)
+            rows.append(_table_row("index_data_to_coord_alignment", "integral", gap_bits, gap_raw, "align original_position_coord to 32-bit boundary", indent=1))
 
     # Position coord section with original_position_coord title (no value display)
     rows.append("original_position_coord")
@@ -715,10 +717,15 @@ def _infer_point_mode_from_layout(words: Dict[int, int]) -> int:
     return _has_point_pitch(words)
 
 
+def _align_up(value: int, alignment: int) -> int:
+    return ((value + alignment - 1) // alignment) * alignment
+
+
 def _coord_start_bit(payload_start_bit: int, index_words: List[int], this_is_point_primblk: int) -> int:
     if this_is_point_primblk:
         return payload_start_bit + STRUCT_WIDTHS["point_pitch_s"]
-    return payload_start_bit + len(index_words) * INDEX_DATA_BITS + INDEX_DATA_TO_COORD_GAP_BITS
+    index_data_end_bit = payload_start_bit + len(index_words) * INDEX_DATA_BITS
+    return _align_up(index_data_end_bit, INDEX_DATA_COORD_ALIGNMENT_BITS)
 
 
 def _extract_position_coords_from_words(
