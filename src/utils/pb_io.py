@@ -57,20 +57,27 @@ class PbInstructionRandom:
     def prim_header(self) -> int:
         return _pack_concat_fields(PRIM_HEADER_FIELDS, self.prim_header_values)
 
-def load_pb_dump(path: str) -> Tuple[RasterConfig, List[Triangle]]:
+def load_pb_dump(path: str, output_path: Optional[str] = None) -> Tuple[RasterConfig, List[Triangle]]:
     try:
         with open(path, "r", encoding="utf-8") as f:
             text = f.read()
     except OSError as exc:
         raise ValueError(f"Failed to read PB dump: {exc}") from exc
 
-    point_mode = _parse_point_primblk_literal(text)
+    point_mode = _infer_point_mode_from_ispa_objtype_text(text)
     coords = _parse_position_coord_literals(text)
-    index_data = [] if point_mode else _parse_index_data_literals(text)
-    if not coords:
+    index_data = [] if point_mode == 1 else _parse_index_data_literals(text)
+    words: Optional[Dict[int, int]] = None
+
+    if not coords or (point_mode == 0 and not index_data):
         words = parse_memory_dump(text)
-        coords = _extract_position_coords_from_words(words)
-        if not index_data:
+        if point_mode is None:
+            point_mode = _infer_point_mode_from_ispa_objtype_words(words)
+        if point_mode is None:
+            point_mode = _infer_point_mode_from_layout(words)
+        if not coords:
+            coords = _extract_position_coords_from_words(words, point_mode)
+        if point_mode == 0 and not index_data:
             primitive_count = len(coords) // 3
             index_data = _extract_index_data_from_words(words, primitive_count)
 
@@ -80,6 +87,11 @@ def load_pb_dump(path: str) -> Tuple[RasterConfig, List[Triangle]]:
     triangles = _build_triangles(coords, index_data)
     if not triangles:
         raise ValueError("PB dump does not contain any complete triangle primitives")
+
+    if output_path is not None:
+        if words is None:
+            words = parse_memory_dump(text)
+        _write_parsed_pb_dump(output_path, words, coords, index_data, point_mode)
 
     return RasterConfig(), triangles
 
@@ -97,6 +109,7 @@ def save_pb_dump(path: str, config: RasterConfig, triangles: List[Triangle]) -> 
     _apply_pb_instruction_constraints(instruction)
     this_is_point_primblk = instruction.primitive_values["this_is_point_primblk"]
     words, index_data_start_bit = _randomize_pb_memory(len(vertices), len(index_words), instruction)
+    _enforce_ispa_objtype_consistency(words, this_is_point_primblk)
     emitted_index_words = [] if this_is_point_primblk else index_words
     for index, raw in enumerate(emitted_index_words):
         _write_bits(words, index_data_start_bit + index * INDEX_DATA_BITS, INDEX_DATA_BITS, raw)
@@ -167,6 +180,112 @@ def format_annotated_pb_dump(
         "",
     ]
     return "\n".join(parts)
+
+
+def _write_parsed_pb_dump(
+    output_path: str,
+    words: Dict[int, int],
+    coords: List[Tuple[float, float, float]],
+    index_data: List[int],
+    point_mode: int,
+) -> None:
+    content = format_parsed_pb_dump(words, coords, index_data, point_mode)
+    try:
+        with open(output_path, "w", encoding="utf-8") as f:
+            f.write(content)
+    except OSError as exc:
+        raise ValueError(f"Failed to write parsed PB dump: {exc}") from exc
+
+
+def format_parsed_pb_dump(
+    words: Dict[int, int],
+    coords: List[Tuple[float, float, float]],
+    index_data: List[int],
+    point_mode: int,
+) -> str:
+    parts = [
+        "Parsed PB Dump from memory words",
+        "",
+        _format_parsed_state_block_table(words),
+        "",
+    ]
+    if point_mode:
+        parts.append(_format_parsed_point_pitch_table(words))
+    else:
+        parts.append(_format_parsed_index_data_table(words, index_data))
+    parts.append("")
+    parts.append(_format_parsed_coord_table(coords))
+    parts.append("")
+    parts.append("Original 256-bit memory dump")
+    parts.append(format_memory_dump(words).rstrip())
+    parts.append("")
+    return "\n".join(parts)
+
+
+def _format_parsed_state_block_table(words: Dict[int, int]) -> str:
+    rows = ["field\t\t\tvalues\tnote"]
+    try:
+        filtered_members = get_filtered_state_block_members(words)
+    except (ValueError, KeyError):
+        return rows[0]
+    offset = 0
+    for member in filtered_members:
+        schema = member.schema_name
+        width = STRUCT_WIDTHS[schema]
+        raw = _read_bits_with_default(words, offset, width)
+        display_name = schema.replace("_s", "").replace("_word", "")
+        rows.append(f"{display_name}\t\t\t{width}'h{raw:x}")
+        for field, field_offset in fields_with_offsets(STRUCT_SCHEMAS[schema]):
+            fv = _extract_bits(raw, field_offset, field.width)
+            rows.append(f"\t{field.name}\t\t{field.width}'h{fv:x}")
+        offset += width
+    return "\n".join(rows)
+
+
+def _format_parsed_point_pitch_table(words: Dict[int, int]) -> str:
+    offset = _point_pitch_start_bit(words)
+    raw = _read_bits_with_default(words, offset, STRUCT_WIDTHS["point_pitch_s"])
+    rows = ["field\t\t\tvalues\tnote"]
+    rows.append(f"point_pitch\t\t\t{STRUCT_WIDTHS['point_pitch_s']}'h{raw:x}")
+    for field, field_offset in fields_with_offsets(STRUCT_SCHEMAS["point_pitch_s"]):
+        fv = _extract_bits(raw, field_offset, field.width)
+        rows.append(f"\t{field.name}\t\t{field.width}'h{fv:x}")
+    return "\n".join(rows)
+
+
+def _format_parsed_index_data_table(words: Dict[int, int], index_data: List[int]) -> str:
+    rows = ["field\t\t\tvalues\tnote"]
+    for i, raw in enumerate(index_data):
+        rows.append(f"p[{i}]\t\t\t{INDEX_DATA_BITS}'h{raw:x}")
+        i0 = _extract_bits(raw, 0, 6)
+        ab = _extract_bits(raw, 6, 1)
+        i1 = _extract_bits(raw, 8, 6)
+        bc = _extract_bits(raw, 14, 1)
+        i2 = _extract_bits(raw, 16, 6)
+        ca = _extract_bits(raw, 22, 1)
+        bf = _extract_bits(raw, 23, 1)
+        rows.append(f"\tix_index_0\t\t6'h{i0:x}")
+        rows.append(f"\tix_edge_flag_ab\t\t1'h{ab:x}")
+        rows.append(f"\tix_index_1\t\t6'h{i1:x}")
+        rows.append(f"\tix_edge_flag_bc\t\t1'h{bc:x}")
+        rows.append(f"\tix_index_2\t\t6'h{i2:x}")
+        rows.append(f"\tix_edge_flag_ca\t\t1'h{ca:x}")
+        rows.append(f"\tix_bf_flag\t\t1'h{bf:x}")
+    return "\n".join(rows)
+
+
+def _format_parsed_coord_table(coords: List[Tuple[float, float, float]]) -> str:
+    rows = ["field\t\t\tvalues\tnote"]
+    for i, (x, y, z) in enumerate(coords):
+        coord_raw = _pack_position_coord((x, y, z))
+        rows.append(f"v[{i}]\t\t\t{COORD_BITS}'h{coord_raw:x}")
+        x_raw = _pack_q16_8_24(x)
+        y_raw = _pack_q16_8_24(y)
+        z_raw = _pack_fp32(z)
+        rows.append(f"\tx[{i}]\t\t24'h{x_raw:x}\tQ16.8")
+        rows.append(f"\ty[{i}]\t\t24'h{y_raw:x}\tQ16.8")
+        rows.append(f"\tz[{i}]\t\t32'h{z_raw:x}\tFP32")
+    return "\n".join(rows)
 
 
 def _format_pb_instruction_table(instruction: PbInstructionRandom) -> str:
@@ -520,9 +639,63 @@ def _bit_range_label(absolute_bit: int, width: int) -> str:
     return f"addr+{start_word}[255:{start_offset}]..addr+{end_word}[{end_offset}:0]"
 
 
-def _parse_point_primblk_literal(text: str) -> int:
+def _parse_point_primblk_literal(text: str) -> Optional[int]:
     match = POINT_PRIMBLK_RE.search(text)
-    return int(match.group(1)) if match else 0
+    return int(match.group(1)) if match else None
+
+
+POINT_OBJTYPE_VALUES = {2, 3, 4, 6}
+
+_ISPA_OBJTYPE_RE = re.compile(
+    r"ispa_objtype\s+.*?(?:\d+)\s*'\s*h\s*([0-9a-fA-F]+)",
+    re.IGNORECASE,
+)
+
+
+def _infer_point_mode_from_ispa_objtype_text(text: str) -> Optional[int]:
+    match = _ISPA_OBJTYPE_RE.search(text)
+    if match:
+        objtype = int(match.group(1), 16)
+        return 1 if objtype in POINT_OBJTYPE_VALUES else 0
+    return None
+
+
+def _infer_point_mode_from_ispa_objtype_words(words: Dict[int, int]) -> Optional[int]:
+    try:
+        filtered_members = get_filtered_state_block_members(words)
+        offset = 0
+        for member in filtered_members:
+            if member.name == "isp_state_word_fa":
+                fa_raw = _read_bits_with_default(words, offset, STRUCT_WIDTHS["isp_state_word_a_s"])
+                objtype = _extract_bits(fa_raw, STRUCT_FIELD_OFFSETS["isp_state_word_a_s"]["ispa_objtype"], 4)
+                return 1 if objtype in POINT_OBJTYPE_VALUES else 0
+            offset += STRUCT_WIDTHS[member.schema_name]
+    except (ValueError, KeyError):
+        pass
+    return None
+
+
+def _enforce_ispa_objtype_consistency(words: Dict[int, int], this_is_point_primblk: int) -> None:
+    try:
+        filtered_members = get_filtered_state_block_members(words)
+        offset = 0
+        for member in filtered_members:
+            if member.name == "isp_state_word_fa":
+                fa_raw = _read_bits_with_default(words, offset, STRUCT_WIDTHS["isp_state_word_a_s"])
+                objtype = _extract_bits(fa_raw, STRUCT_FIELD_OFFSETS["isp_state_word_a_s"]["ispa_objtype"], 4)
+                is_point_objtype = objtype in POINT_OBJTYPE_VALUES
+                if this_is_point_primblk and not is_point_objtype:
+                    new_objtype = 2
+                    new_fa = (fa_raw & ~(0xF << STRUCT_FIELD_OFFSETS["isp_state_word_a_s"]["ispa_objtype"])) | (new_objtype << STRUCT_FIELD_OFFSETS["isp_state_word_a_s"]["ispa_objtype"])
+                    _write_bits(words, offset, STRUCT_WIDTHS["isp_state_word_a_s"], new_fa)
+                elif not this_is_point_primblk and is_point_objtype:
+                    new_objtype = 1
+                    new_fa = (fa_raw & ~(0xF << STRUCT_FIELD_OFFSETS["isp_state_word_a_s"]["ispa_objtype"])) | (new_objtype << STRUCT_FIELD_OFFSETS["isp_state_word_a_s"]["ispa_objtype"])
+                    _write_bits(words, offset, STRUCT_WIDTHS["isp_state_word_a_s"], new_fa)
+                return
+            offset += STRUCT_WIDTHS[member.schema_name]
+    except (ValueError, KeyError):
+        pass
 
 
 def _parse_position_coord_literals(text: str) -> List[Tuple[float, float, float]]:
@@ -555,18 +728,55 @@ def _has_point_pitch(words: Dict[int, int]) -> int:
     return 1 if _extract_bits(_read_bits_with_default(words, _point_pitch_start_bit(words), STRUCT_WIDTHS["point_pitch_s"]), 0, STRUCT_WIDTHS["point_pitch_s"]) else 0
 
 
+def _resolve_point_mode(words: Dict[int, int], point_mode: Optional[int]) -> int:
+    if point_mode is not None:
+        return point_mode
+    from_ispa = _infer_point_mode_from_ispa_objtype_words(words)
+    if from_ispa is not None:
+        return from_ispa
+    return _infer_point_mode_from_layout(words)
+
+
+def _infer_point_mode_from_layout(words: Dict[int, int]) -> int:
+    candidates = []
+    for point_mode in (0, 1):
+        try:
+            coords = _extract_position_coords_from_words(words, point_mode)
+            index_words = []
+            if point_mode == 0:
+                index_words = _extract_index_data_from_words(words, len(coords) // 3)
+                _build_triangles(coords, index_words)
+            else:
+                _build_triangles(coords, [])
+        except ValueError:
+            continue
+        candidates.append((point_mode, len(coords), len(index_words)))
+
+    if candidates:
+        candidates.sort(key=lambda item: (item[1] % 3 == 0, item[1], item[2]), reverse=True)
+        return candidates[0][0]
+    return _has_point_pitch(words)
+
+
 def _coord_start_bit(payload_start_bit: int, index_words: List[int], this_is_point_primblk: int) -> int:
     if this_is_point_primblk:
         return payload_start_bit + STRUCT_WIDTHS["point_pitch_s"]
     return payload_start_bit + len(index_words) * INDEX_DATA_BITS
 
 
-def _extract_position_coords_from_words(words: Dict[int, int]) -> List[Tuple[float, float, float]]:
+def _extract_position_coords_from_words(
+    words: Dict[int, int],
+    this_is_point_primblk: Optional[int] = None,
+) -> List[Tuple[float, float, float]]:
+    if this_is_point_primblk is None:
+        return _extract_position_coords_from_words(words, _infer_point_mode_from_layout(words))
+
     explicit_count = _extract_vertex_total(words)
     index_data_start_bit = _index_data_start_bit(words)
+    point_mode = this_is_point_primblk
     primitive_count = explicit_count // 3 if explicit_count else _primitive_count_from_words(words, index_data_start_bit)
-    index_words = [] if _has_point_pitch(words) else [0] * primitive_count
-    coord_start_bit = _coord_start_bit(index_data_start_bit, index_words, _has_point_pitch(words))
+    index_words = [] if point_mode else [0] * primitive_count
+    coord_start_bit = _coord_start_bit(index_data_start_bit, index_words, point_mode)
     available_count = _available_position_coord_count(words, coord_start_bit)
     if explicit_count and explicit_count <= available_count:
         count = explicit_count
@@ -574,7 +784,7 @@ def _extract_position_coords_from_words(words: Dict[int, int]) -> List[Tuple[flo
         count = available_count
 
     if count <= 0:
-        raise ValueError("PB dump does not contain position coord data after index_data")
+        raise ValueError("PB dump does not contain complete original_position_coord data for the resolved PB layout")
 
     coords = []
     for index in range(count):
@@ -841,9 +1051,7 @@ def _set_bits(target: int, offset: int, width: int, field: int) -> int:
 
 def _parse_sv_256_literal(hex_text: str) -> int:
     value = int(hex_text, 16)
-    if value >= (1 << 256):
-        raise ValueError("256'h literal exceeds 256 bits")
-    return value
+    return value & ((1 << 256) - 1)
 
 
 def _format_sv_256_literal(value: int) -> str:

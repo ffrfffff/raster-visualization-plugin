@@ -505,14 +505,23 @@ class MainWindow(QMainWindow):
         if not path:
             return
 
+        from pathlib import Path as _Path
+        input_stem = _Path(path).stem
+        parsed_path = str(self.OUTPUT_DIR / f"parsed_{input_stem}.sv")
+
         try:
-            config, triangles = load_pb_dump(path)
+            config, triangles = load_pb_dump(path, output_path=parsed_path)
         except ValueError as exc:
             QMessageBox.warning(self, "Import Failed", str(exc))
             return
 
         self._apply_imported_scene(config, triangles)
-        QMessageBox.information(self, "Import Complete", f"Imported {len(triangles)} triangle(s) from PB dump.")
+        QMessageBox.information(
+            self,
+            "Import Complete",
+            f"Imported {len(triangles)} triangle(s) from PB dump.\n"
+            f"Parsed output saved to: {parsed_path}",
+        )
 
     def _on_export(self):
         QMessageBox.information(self, "Export", "Export feature coming soon")

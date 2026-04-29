@@ -234,6 +234,14 @@ python main.py
 
 ## 版本日志
 
+### v1.4.6 (2026-04-29)
+- PB 导入解析现在复用导出侧紧凑布局规则，通过 `get_filtered_state_block_members()` 计算 state block 长度，保证隐藏 state word 不占 memory 空间且 `fa/fb/ba/bb` 顺序一致。
+- PB 导出仍由 `pb_instruction` 中的 `this_is_point_primblk` 控制 `point_pitch` 与 `index_data` 互斥，导出时 `ispa_objtype` 与 `this_is_point_primblk` 保持一致。
+- PB 导入根据 `ispa_objtype` 字段判断 `point_pitch` 与 `index_data` 的互斥关系：`ispa_objtype` 为 2、3、4、6 时使用 `point_pitch`，其他值使用 `index_data`。
+- 纯 `randomized_3d_memory` dump 无法从 `ispa_objtype` 推断模式时，会按 point/index 两种 compact payload layout 尝试推断。
+- PB 导入时自动输出解析后的 PB 字段表到 `output/parsed_*.sv`，包含 state block 字段表、payload 表和坐标表，便于逐字段对照。
+- `256'h...` literal 导入兼容 `x/z/?` unknown 位并按 0 处理；超过 256-bit 的 sized literal 按低 256-bit 截取。
+
 ### v1.4.5 (2026-04-28)
 - `prim_header` 父值改为严格按 `{cs_type, cs_isp_state_size, cs_prim_total, cs_mask_fmt, cs_prim_base_pres, cs_prim_base_offset}` 拼接，父字段本身不再独立随机。
 - `prim_mask_word0`、`prim_mask_word1`、`prim_mask_word2` 同样由各自子字段拼接生成，避免父子值不一致。
