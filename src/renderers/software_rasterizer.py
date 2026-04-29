@@ -33,7 +33,12 @@ class SoftwareRasterizer:
         if any(not math.isfinite(component) for vertex in triangle.vertices for component in vertex):
             return result
 
-        vertices = triangle.vertices
+        source_vertices = triangle.vertices
+        coord_offset = self.config.coordinate_offset
+        vertices = [
+            (vertex[0] - coord_offset, vertex[1] - coord_offset, vertex[2])
+            for vertex in source_vertices
+        ]
         v0 = (vertices[0][0], vertices[0][1])
         v1 = (vertices[1][0], vertices[1][1])
         v2 = (vertices[2][0], vertices[2][1])
@@ -49,10 +54,15 @@ class SoftwareRasterizer:
         max_x = min(max_x, min(clip_x + clip_w, scissor_x + scissor_w))
         max_y = min(max_y, min(clip_y + clip_h, scissor_y + scissor_h))
 
-        min_x = max(min_x, 0)
-        min_y = max(min_y, 0)
-        max_x = min(max_x, self.config.screen_width)
-        max_y = min(max_y, self.config.screen_height)
+        screen_min_x = self.config.screen_min_x
+        screen_min_y = self.config.screen_min_y
+        screen_max_x = self.config.screen_max_x
+        screen_max_y = self.config.screen_max_y
+
+        min_x = max(min_x, screen_min_x)
+        min_y = max(min_y, screen_min_y)
+        max_x = min(max_x, screen_max_x)
+        max_y = min(max_y, screen_max_y)
 
         msaa_positions = generate_msaa_sample_positions(self.config.msaa)
         msaa_count = self.config.msaa
@@ -106,8 +116,8 @@ class SoftwareRasterizer:
             if self.config.tile_width <= 0 or self.config.tile_height <= 0:
                 continue
             for px, py in result.covered_pixels:
-                tile_x = px // self.config.tile_width
-                tile_y = py // self.config.tile_height
+                tile_x = (px - self.config.screen_origin) // self.config.tile_width
+                tile_y = (py - self.config.screen_origin) // self.config.tile_height
                 key = (tile_x, tile_y)
                 if key not in tile_coverage:
                     tile_coverage[key] = set()

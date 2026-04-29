@@ -223,12 +223,12 @@ class MainWindow(QMainWindow):
         options_layout3 = QHBoxLayout()
         options_layout3.addWidget(QLabel("Go Top X:"))
         self.goto_x_spin = QSpinBox()
-        self.goto_x_spin.setRange(0, self.config_model.config.screen_width)
-        self.goto_x_spin.setValue(self.config_model.config.screen_width // 2)
+        self.goto_x_spin.setRange(self.config_model.config.screen_origin + self.config_model.config.coordinate_offset, self.config_model.config.screen_origin + self.config_model.config.coordinate_offset + self.config_model.config.screen_width)
+        self.goto_x_spin.setValue(self.config_model.config.screen_origin + self.config_model.config.coordinate_offset + self.config_model.config.screen_width // 2)
         self.goto_x_spin.setFixedWidth(80)
         self.goto_y_spin = QSpinBox()
-        self.goto_y_spin.setRange(0, self.config_model.config.screen_height)
-        self.goto_y_spin.setValue(self.config_model.config.screen_height // 2)
+        self.goto_y_spin.setRange(self.config_model.config.screen_origin + self.config_model.config.coordinate_offset, self.config_model.config.screen_origin + self.config_model.config.coordinate_offset + self.config_model.config.screen_height)
+        self.goto_y_spin.setValue(self.config_model.config.screen_origin + self.config_model.config.coordinate_offset + self.config_model.config.screen_height // 2)
         self.goto_y_spin.setFixedWidth(80)
         self.goto_btn = QPushButton("Go")
         self.goto_btn.setFixedWidth(42)
@@ -341,7 +341,9 @@ class MainWindow(QMainWindow):
         return self.view3d if self.view_tabs.currentWidget() is self.view3d else self.raster_view
 
     def _goto_top_position(self):
-        self.raster_view.center_on_screen_position(self.goto_x_spin.value(), self.goto_y_spin.value())
+        target_x = self.goto_x_spin.value() - self.config_model.config.coordinate_offset
+        target_y = self.goto_y_spin.value() - self.config_model.config.coordinate_offset
+        self.raster_view.center_on_screen_position(target_x, target_y)
         self.view_tabs.setCurrentWidget(self.raster_view)
         self._sync_main_scroll_from_active_view()
 
@@ -407,10 +409,11 @@ class MainWindow(QMainWindow):
         self.raster_view.set_config(self.config_model.config)
         self.depth_view.set_config(self.config_model.config)
         self.view3d.set_config(self.config_model.config)
-        self.goto_x_spin.setRange(0, self.config_model.config.screen_width)
-        self.goto_y_spin.setRange(0, self.config_model.config.screen_height)
-        self.goto_x_spin.setValue(min(self.goto_x_spin.value(), self.config_model.config.screen_width))
-        self.goto_y_spin.setValue(min(self.goto_y_spin.value(), self.config_model.config.screen_height))
+        offset = self.config_model.config.screen_origin + self.config_model.config.coordinate_offset
+        self.goto_x_spin.setRange(offset, offset + self.config_model.config.screen_width)
+        self.goto_y_spin.setRange(offset, offset + self.config_model.config.screen_height)
+        self.goto_x_spin.setValue(max(offset, min(self.goto_x_spin.value(), offset + self.config_model.config.screen_width)))
+        self.goto_y_spin.setValue(max(offset, min(self.goto_y_spin.value(), offset + self.config_model.config.screen_height)))
         self._update_views()
 
     def _on_triangles_changed(self):
@@ -488,10 +491,11 @@ class MainWindow(QMainWindow):
         self.raster_view.set_config(self.config_model.config)
         self.depth_view.set_config(self.config_model.config)
         self.view3d.set_config(self.config_model.config)
-        self.goto_x_spin.setRange(0, self.config_model.config.screen_width)
-        self.goto_y_spin.setRange(0, self.config_model.config.screen_height)
-        self.goto_x_spin.setValue(min(self.goto_x_spin.value(), self.config_model.config.screen_width))
-        self.goto_y_spin.setValue(min(self.goto_y_spin.value(), self.config_model.config.screen_height))
+        offset = self.config_model.config.screen_origin + self.config_model.config.coordinate_offset
+        self.goto_x_spin.setRange(offset, offset + self.config_model.config.screen_width)
+        self.goto_y_spin.setRange(offset, offset + self.config_model.config.screen_height)
+        self.goto_x_spin.setValue(max(offset, min(self.goto_x_spin.value(), offset + self.config_model.config.screen_width)))
+        self.goto_y_spin.setValue(max(offset, min(self.goto_y_spin.value(), offset + self.config_model.config.screen_height)))
         self._update_views()
         self.triangle_panel.update_triangles(self.triangle_model.triangles)
 

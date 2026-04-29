@@ -20,8 +20,9 @@ python main.py
 
 ### 配置参数面板
 - **MSAA**: 支持 1x / 2x / 4x / 8x / 16x，采样点使用标准旋转网格（Rotated Grid）模式。
-- **Config Number Base**: 控制 Screen Size、Depth Surface Size、Render Target Size、Clip Region、Scissor、Tile Size 这六组数值输入的显示/输入进制，可在 Binary / Decimal / Hexadecimal 间切换；所有值统一按十进制数值存入配置，范围为 `0` 到 `64K`（`0b1_0000_0000_0000_0000` / `0x10000` / `65536`）。
+- **Config Number Base**: 控制 Screen Size、Screen Offset、Depth Surface Size、Render Target Size、Clip Region、Scissor、Tile Size 这七组数值输入的显示/输入进制，可在 Binary / Decimal / Hexadecimal 间切换；所有值统一按十进制数值存入配置，范围为 `0` 到 `64K`（`0b1_0000_0000_0000_0000` / `0x10000` / `65536`）。
 - **Screen Size**: 配置屏幕空间宽高，是 Top View / 3D View 中 screen 平面的基础范围。
+- **Screen Offset**: 配置 X/Y 共用的 offset，默认模式下 screen 实际范围为 `[offset, offset + width)` / `[offset, offset + height)`，tile 索引按减去 screen 起点后计算；勾选 `Subtract from coordinates` 后 screen 保持从 `(0,0)` 开始，所有三角形 X/Y 在光栅化和绘制前自动减去 offset。
 - **Depth Surface Size**: 配置 depth surface 宽高，可通过 `Depth Surf` 开关在 Top View / 3D View / Popout 中显示边界。
 - **Render Target Size**: 配置 render target 宽高，可通过 `RT Surf` 开关在 Top View / 3D View / Popout 中显示边界。
 - **Clip Region**: 配置裁剪区域 `(x, y, width, height)`，在视图中用黄色边框显示。
@@ -40,7 +41,7 @@ python main.py
 
 ### 场景 JSON 导入
 - 支持通过 `File > Import Scene...` 读取 JSON 场景文件，一次性导入完整配置和全部三角形。
-- JSON 中可配置 MSAA、Screen Size、Depth Surface Size、Render Target Size、Clip Region、Scissor Rect 和 Tile Size。
+- JSON 中可配置 MSAA、Screen Size、Screen Offset、Depth Surface Size、Render Target Size、Clip Region、Scissor Rect 和 Tile Size。
 - JSON 中可配置多个三角形，每个三角形包含 3 个 screen-space 顶点 `[x, y, z]`，并可选配置 RGB 颜色。
 - 导入后会自动同步配置面板、三角形列表、Top View、Depth Side View、3D View 和已打开的 Popout 窗口。
 
@@ -58,6 +59,8 @@ python main.py
   "config": {
     "msaa": 4,
     "screen_size": [800, 600],
+    "screen_offset": 0,
+    "subtract_screen_offset": false,
     "depth_surface_size": [800, 600],
     "render_target_size": [800, 600],
     "clip_region": [0, 0, 800, 600],
@@ -234,6 +237,12 @@ python main.py
 ```
 
 ## 版本日志
+
+### v1.4.9 (2026-04-29)
+- 配置面板新增 `Screen Offset`，与其它数值配置共用 Binary / Decimal / Hexadecimal 输入和 `0..64K` 范围；默认模式下 X/Y 共用一个 offset，screen 实际起点向右/向下移动到 `(offset, offset)`。
+- `Screen Offset` 新增 `Subtract from coordinates` 开关；开启后 screen 仍从 `(0,0)` 开始，但三角形 X/Y 在光栅化、Top View 和 3D View 绘制前统一减去 offset，便于把带全局偏移的坐标映射回屏幕内。
+- Top View、3D View、Depth Side View、Go Top 定位和软件光栅化统一按当前 offset 模式计算有效 screen 范围与 tile index；tile index 始终按绘制后的 screen 局部坐标计算。
+- JSON 场景导入新增可选 `screen_offset` 和 `subtract_screen_offset` 字段，未配置时默认保持 `0` 和 `false`。
 
 ### v1.4.8 (2026-04-29)
 - PB `original_position_coord` 和坐标编辑工具中的 X/Y 改为 24-bit unsigned Q16.8 解析与打包；例如 `24'hc40000` 解析为 `50176.0`，不再按 signed 值解析为负数。

@@ -1,4 +1,4 @@
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import Tuple
 from PyQt6.QtCore import QObject, pyqtSignal
 
@@ -9,6 +9,8 @@ class RasterConfig:
     msaa: int = 1
     screen_width: int = 800
     screen_height: int = 600
+    screen_offset: int = 0
+    subtract_screen_offset: bool = False
     depth_surface_width: int = 800
     depth_surface_height: int = 600
     clip_region: Tuple[int, int, int, int] = (0, 0, 800, 600)
@@ -29,6 +31,30 @@ class RasterConfig:
         if self.tile_height <= 0:
             return 0
         return (self.screen_height + self.tile_height - 1) // self.tile_height
+
+    @property
+    def screen_origin(self) -> int:
+        return 0 if self.subtract_screen_offset else self.screen_offset
+
+    @property
+    def coordinate_offset(self) -> int:
+        return self.screen_offset if self.subtract_screen_offset else 0
+
+    @property
+    def screen_min_x(self) -> int:
+        return self.screen_origin
+
+    @property
+    def screen_min_y(self) -> int:
+        return self.screen_origin
+
+    @property
+    def screen_max_x(self) -> int:
+        return self.screen_origin + self.screen_width
+
+    @property
+    def screen_max_y(self) -> int:
+        return self.screen_origin + self.screen_height
 
     @property
     def msaa_levels(self) -> list:
@@ -56,6 +82,8 @@ class RasterConfigModel(QObject):
         msaa: int,
         screen_width: int,
         screen_height: int,
+        screen_offset: int,
+        subtract_screen_offset: bool,
         depth_surface_width: int,
         depth_surface_height: int,
         rt_width: int,
@@ -68,6 +96,8 @@ class RasterConfigModel(QObject):
         self._config.msaa = msaa
         self._config.screen_width = screen_width
         self._config.screen_height = screen_height
+        self._config.screen_offset = screen_offset
+        self._config.subtract_screen_offset = subtract_screen_offset
         self._config.depth_surface_width = depth_surface_width
         self._config.depth_surface_height = depth_surface_height
         self._config.rt_width = rt_width

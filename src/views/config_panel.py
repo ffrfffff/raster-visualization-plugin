@@ -1,6 +1,6 @@
 from PyQt6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QGroupBox,
-    QSpinBox, QComboBox, QLabel, QPushButton
+    QSpinBox, QComboBox, QLabel, QPushButton, QCheckBox
 )
 from PyQt6.QtCore import pyqtSignal
 from PyQt6.QtGui import QValidator
@@ -104,6 +104,16 @@ class ConfigPanel(QWidget):
         screen_layout.addWidget(QLabel("H:"))
         screen_layout.addWidget(self.screen_height_spin)
         layout.addWidget(screen_group)
+
+        # Screen Offset
+        offset_group = QGroupBox("Screen Offset")
+        offset_layout = QHBoxLayout(offset_group)
+        self.screen_offset_spin = self._create_config_spinbox(0)
+        self.subtract_screen_offset_cb = QCheckBox("Subtract from coordinates")
+        offset_layout.addWidget(QLabel("Offset:"))
+        offset_layout.addWidget(self.screen_offset_spin)
+        offset_layout.addWidget(self.subtract_screen_offset_cb)
+        layout.addWidget(offset_group)
 
         # Depth Surface Size
         depth_group = QGroupBox("Depth Surface Size")
@@ -212,6 +222,8 @@ class ConfigPanel(QWidget):
             msaa=msaa,
             screen_width=self.screen_width_spin.value(),
             screen_height=self.screen_height_spin.value(),
+            screen_offset=self.screen_offset_spin.value(),
+            subtract_screen_offset=self.subtract_screen_offset_cb.isChecked(),
             depth_surface_width=self.depth_width_spin.value(),
             depth_surface_height=self.depth_height_spin.value(),
             rt_width=self.rt_width_spin.value(),
@@ -242,6 +254,8 @@ class ConfigPanel(QWidget):
 
         self.screen_width_spin.setValue(config.screen_width)
         self.screen_height_spin.setValue(config.screen_height)
+        self.screen_offset_spin.setValue(config.screen_offset)
+        self.subtract_screen_offset_cb.setChecked(config.subtract_screen_offset)
         self.depth_width_spin.setValue(config.depth_surface_width)
         self.depth_height_spin.setValue(config.depth_surface_height)
         self.rt_width_spin.setValue(config.rt_width)

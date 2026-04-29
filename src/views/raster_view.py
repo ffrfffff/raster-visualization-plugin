@@ -78,6 +78,7 @@ class RasterView(QWidget):
 
         sw = self.config.screen_width
         sh = self.config.screen_height
+        so = self.config.screen_origin
 
         # 基础像素图 (带 coverage ratio 控制透明度)
         img = QImage(sw, sh, QImage.Format.Format_ARGB32_Premultiplied)
@@ -86,9 +87,13 @@ class RasterView(QWidget):
         for result in self.rasterized_results:
             color = result.triangle.color
             for (px, py), ratio in result.coverage_ratio.items():
+                local_x = px - so
+                local_y = py - so
+                if not (0 <= local_x < sw and 0 <= local_y < sh):
+                    continue
                 alpha = int(200 * ratio)
                 c = QColor(color[0], color[1], color[2], alpha)
-                img.setPixelColor(px, py, c)
+                img.setPixelColor(local_x, local_y, c)
 
         self._pixel_image = img
 
@@ -98,7 +103,10 @@ class RasterView(QWidget):
             img_msaa = QImage(sw, sh, QImage.Format.Format_ARGB32_Premultiplied)
             img_msaa.fill(QColor(0, 0, 0, 0))
             for (px, py), (r, g, b) in resolved.items():
-                img_msaa.setPixelColor(px, py, QColor(r, g, b, 200))
+                local_x = px - so
+                local_y = py - so
+                if 0 <= local_x < sw and 0 <= local_y < sh:
+                    img_msaa.setPixelColor(local_x, local_y, QColor(r, g, b, 200))
             self._pixel_image_msaa = img_msaa
         else:
             self._pixel_image_msaa = None
@@ -143,12 +151,15 @@ class RasterView(QWidget):
         oy = self.offset_y
         sw = self.config.screen_width
         sh = self.config.screen_height
+        so = self.config.screen_origin
+        screen_vx = ox + so * scale
+        screen_vy = oy + so * scale
 
         # 背景
         painter.fillRect(self.rect(), QColor(30, 30, 30))
 
         # 屏幕区域填充
-        screen_rect = QRect(int(ox), int(oy), int(sw * scale), int(sh * scale))
+        screen_rect = QRect(int(screen_vx), int(screen_vy), int(sw * scale), int(sh * scale))
         painter.fillRect(screen_rect, QColor(40, 40, 50))
 
         # ---- 光栅化像素 (QImage 一次性绘制) ----
@@ -159,7 +170,7 @@ class RasterView(QWidget):
             # MSAA>1 时使用 resolved 图，否则用基础 coverage 图
             draw_img = self._pixel_image_msaa if (self.config.msaa > 1 and self._pixel_image_msaa) else self._pixel_image
             if draw_img:
-                target_rect = QRect(int(ox), int(oy), int(sw * scale), int(sh * scale))
+                target_rect = QRect(int(screen_vx), int(screen_vy), int(sw * scale), int(sh * scale))
                 painter.drawImage(target_rect, draw_img)
 
         # ---- Tile 网格 ----
@@ -170,11 +181,11 @@ class RasterView(QWidget):
             pen_grid = QPen(QColor(60, 60, 70), 1)
             painter.setPen(pen_grid)
             for i in range(self.config.tile_count_x + 1):
-                x = int(ox + i * tw * scale)
-                painter.drawLine(x, int(oy), x, int(oy + sh * scale))
+                x = int(ox + (so + min(i * tw, sw)) * scale)
+                painter.drawLine(x, int(screen_vy), x, int(screen_vy + sh * scale))
             for j in range(self.config.tile_count_y + 1):
-                y = int(oy + j * th * scale)
-                painter.drawLine(int(ox), y, int(ox + sw * scale), y)
+                y = int(oy + (so + min(j * th, sh)) * scale)
+                painter.drawLine(int(screen_vx), y, int(screen_vx + sw * scale), y)
 
             # Tile 索引标注
             if self.show_tile_labels and scale >= 0.5:
@@ -185,8 +196,8 @@ class RasterView(QWidget):
 
                 for i in range(self.config.tile_count_x):
                     for j in range(self.config.tile_count_y):
-                        tile_cx = ox + (i * tw + tw / 2) * scale
-                        tile_cy = oy + (j * th + th / 2) * scale
+                        tile_cx = ox + (so + i * tw + tw / 2) * scale
+                        tile_cy = oy + (so + j * th + th / 2) * scale
                         label = f"({i},{j})"
                         label_w = fm.horizontalAdvance(label)
                         label_h = fm.height()
@@ -202,37 +213,37 @@ class RasterView(QWidget):
 
                 x_label_h = fm_small.height()
                 if oy - x_label_h - 3 > 0:
-                    step_x = max(1, (fm_small.horizontalAdvance(str(sw)) + 4) // max(1, int(tw * scale)) + 1)
+                    step_x = max(1, (fm_small.horizontalAdvance(str(so + sw)) + 4) // max(1, int(tw * scale)) + 1)
                     for i in range(0, self.config.tile_count_x + 1, step_x):
-                        x_pixel = i * tw
+                        x_pixel = so + min(i * tw, sw)
                         vx = int(ox + x_pixel * scale)
                         text = str(x_pixel)
                         tw_px = fm_small.horizontalAdvance(text)
                         painter.drawText(vx - tw_px // 2, int(oy - 3), text)
 
-                y_label_w = fm_small.horizontalAdvance(str(sh))
-                if ox - y_label_w - 3 > 0:
+                y_label_w = fm_small.horizontalAdvance(str(so + sh))
+                if screen_vx - y_label_w - 3 > 0:
                     step_y = max(1, (fm_small.height() + 2) // max(1, int(th * scale)) + 1)
                     for j in range(0, self.config.tile_count_y + 1, step_y):
-                        y_pixel = j * th
+                        y_pixel = so + min(j * th, sh)
                         vy = int(oy + y_pixel * scale)
                         text = str(y_pixel)
-                        painter.drawText(int(ox - fm_small.horizontalAdvance(text) - 3), vy + x_label_h // 3, text)
+                        painter.drawText(int(screen_vx - fm_small.horizontalAdvance(text) - 3), vy + x_label_h // 3, text)
 
         # ---- 像素坐标网格（高缩放时） ----
         if self.show_pixel_coords and scale >= 4.0:
             painter.setPen(QPen(QColor(50, 50, 55), 1))
-            vis_min_x = max(0, int(-ox / scale))
-            vis_min_y = max(0, int(-oy / scale))
-            vis_max_x = min(sw, int((self.width() - ox) / scale) + 1)
-            vis_max_y = min(sh, int((self.height() - oy) / scale) + 1)
+            vis_min_x = max(so, int(-ox / scale))
+            vis_min_y = max(so, int(-oy / scale))
+            vis_max_x = min(so + sw, int((self.width() - ox) / scale) + 1)
+            vis_max_y = min(so + sh, int((self.height() - oy) / scale) + 1)
 
             for px in range(vis_min_x, vis_max_x + 1):
                 x = int(ox + px * scale)
-                painter.drawLine(x, int(max(oy, oy)), x, int(min(oy + sh * scale, oy + sh * scale)))
+                painter.drawLine(x, int(screen_vy), x, int(screen_vy + sh * scale))
             for py in range(vis_min_y, vis_max_y + 1):
                 y = int(oy + py * scale)
-                painter.drawLine(int(ox), y, int(ox + sw * scale), y)
+                painter.drawLine(int(screen_vx), y, int(screen_vx + sw * scale), y)
 
             if scale >= 8.0:
                 coord_font = max(6, min(9, int(6 * min(scale / 8, 3))))
@@ -314,7 +325,9 @@ class RasterView(QWidget):
 
             polygon = QPolygon()
             for v in triangle.vertices:
-                point = self._safe_screen_point(ox + v[0] * scale, oy + v[1] * scale)
+                draw_vx = v[0] - self.config.coordinate_offset
+                draw_vy = v[1] - self.config.coordinate_offset
+                point = self._safe_screen_point(ox + draw_vx * scale, oy + draw_vy * scale)
                 if point is not None:
                     polygon.append(point)
             if polygon.size() >= 2:
@@ -324,8 +337,10 @@ class RasterView(QWidget):
             label_font_size = max(7, min(11, int(9 * min(scale, 2))))
             painter.setFont(QFont("Consolas", label_font_size))
             for vi, v in enumerate(triangle.vertices):
-                vx = ox + v[0] * scale
-                vy = oy + v[1] * scale
+                draw_vx = v[0] - self.config.coordinate_offset
+                draw_vy = v[1] - self.config.coordinate_offset
+                vx = ox + draw_vx * scale
+                vy = oy + draw_vy * scale
                 point = self._safe_screen_point(vx, vy)
                 if point is None:
                     continue
@@ -343,11 +358,11 @@ class RasterView(QWidget):
         # ---- 屏幕边框 ----
         painter.setPen(QPen(QColor(150, 150, 150), 2))
         painter.setBrush(Qt.BrushStyle.NoBrush)
-        painter.drawRect(int(ox), int(oy), int(sw * scale), int(sh * scale))
+        painter.drawRect(int(screen_vx), int(screen_vy), int(sw * scale), int(sh * scale))
 
         painter.setPen(QPen(QColor(180, 180, 180)))
         painter.setFont(QFont("Arial", 9))
-        painter.drawText(int(ox), int(oy - 5), f"Screen {sw}x{sh}")
+        painter.drawText(int(screen_vx), int(screen_vy - 5), f"Screen {sw}x{sh} @ {so}")
 
         # ---- 底部信息 ----
         painter.setPen(QPen(QColor(200, 200, 200)))
@@ -358,7 +373,7 @@ class RasterView(QWidget):
             edge_count = sum(1 for r in self.rasterized_results
                             for ratio in r.coverage_ratio.values() if ratio < 1.0)
             msaa_text += f" (edge pixels: {edge_count})"
-        info_text = f"Zoom: {self.zoom:.2f}x | Screen: {sw}x{sh} | " \
+        info_text = f"Zoom: {self.zoom:.2f}x | Screen: {sw}x{sh} @ {so} | " \
                     f"Tiles: {self.config.tile_width}x{self.config.tile_height} ({self.config.tile_count_x}x{self.config.tile_count_y}) | " \
                     f"{msaa_text}"
         if self.triangles:
@@ -452,9 +467,9 @@ class RasterView(QWidget):
             self.setCursor(Qt.CursorShape.ClosedHandCursor)
         elif event.button() == Qt.MouseButton.LeftButton:
             sx, sy = self._view_to_screen(event.pos().x(), event.pos().y())
-            if self.config and self.config.tile_width > 0 and self.config.tile_height > 0 and 0 <= sx < self.config.screen_width and 0 <= sy < self.config.screen_height:
-                tile_x = int(sx) // self.config.tile_width
-                tile_y = int(sy) // self.config.tile_height
+            if self.config and self.config.tile_width > 0 and self.config.tile_height > 0 and self.config.screen_origin <= sx < self.config.screen_origin + self.config.screen_width and self.config.screen_origin <= sy < self.config.screen_origin + self.config.screen_height:
+                tile_x = int(sx - self.config.screen_origin) // self.config.tile_width
+                tile_y = int(sy - self.config.screen_origin) // self.config.tile_height
                 self.selected_msaa_pixel = (int(sx), int(sy))
                 self.update()
                 QToolTip.showText(
@@ -473,9 +488,9 @@ class RasterView(QWidget):
             self.update()
         else:
             sx, sy = self._view_to_screen(event.pos().x(), event.pos().y())
-            if self.config and self.config.tile_width > 0 and self.config.tile_height > 0 and 0 <= sx < self.config.screen_width and 0 <= sy < self.config.screen_height:
-                tile_x = int(sx) // self.config.tile_width
-                tile_y = int(sy) // self.config.tile_height
+            if self.config and self.config.tile_width > 0 and self.config.tile_height > 0 and self.config.screen_origin <= sx < self.config.screen_origin + self.config.screen_width and self.config.screen_origin <= sy < self.config.screen_origin + self.config.screen_height:
+                tile_x = int(sx - self.config.screen_origin) // self.config.tile_width
+                tile_y = int(sy - self.config.screen_origin) // self.config.tile_height
                 QToolTip.showText(
                     event.globalPosition().toPoint(),
                     f"Pixel: ({int(sx)}, {int(sy)})\nTile: ({tile_x}, {tile_y})"
@@ -491,8 +506,8 @@ class RasterView(QWidget):
             margin = 30
             self.zoom = min((self.width() - 2 * margin) / self.config.screen_width,
                             (self.height() - 2 * margin) / self.config.screen_height)
-            self.offset_x = margin
-            self.offset_y = margin
+            self.offset_x = margin - self.config.screen_origin * self.zoom
+            self.offset_y = margin - self.config.screen_origin * self.zoom
             self.update()
 
     def zoom_in(self):
@@ -514,8 +529,9 @@ class RasterView(QWidget):
     def center_on_screen_position(self, x: float, y: float):
         if not self.config:
             return
-        x = max(0.0, min(float(self.config.screen_width), float(x)))
-        y = max(0.0, min(float(self.config.screen_height), float(y)))
+        screen_min = float(self.config.screen_origin)
+        x = max(screen_min, min(float(self.config.screen_origin + self.config.screen_width), float(x)))
+        y = max(screen_min, min(float(self.config.screen_origin + self.config.screen_height), float(y)))
         self.offset_x = self.width() / 2 - x * self.zoom
         self.offset_y = self.height() / 2 - y * self.zoom
         self.update()

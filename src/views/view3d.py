@@ -76,8 +76,9 @@ class View3D(QWidget):
     def _screen_to_top_view_rect(self) -> QRect:
         sw = self.config.screen_width
         sh = self.config.screen_height
-        p0 = self._project(0, 0, 0)
-        p1 = self._project(sw, sh, 0)
+        so = self.config.screen_origin
+        p0 = self._project(so, so, 0)
+        p1 = self._project(so + sw, so + sh, 0)
         x = min(p0[0], p1[0])
         y = min(p0[1], p1[1])
         w = abs(p1[0] - p0[0])
@@ -86,13 +87,17 @@ class View3D(QWidget):
 
     def _visible_screen_bounds(self, pad: int = 2) -> Tuple[int, int, int, int]:
         if not self.config or not self._is_flat_top_view():
-            return (0, 0, self.config.screen_width if self.config else 0, self.config.screen_height if self.config else 0)
-        top_left = self._screen_point_from_view(0, 0) or (0, 0)
-        bottom_right = self._screen_point_from_view(self.width(), self.height()) or (self.config.screen_width, self.config.screen_height)
-        min_x = max(0, int(math.floor(min(top_left[0], bottom_right[0]))) - pad)
-        min_y = max(0, int(math.floor(min(top_left[1], bottom_right[1]))) - pad)
-        max_x = min(self.config.screen_width, int(math.ceil(max(top_left[0], bottom_right[0]))) + pad)
-        max_y = min(self.config.screen_height, int(math.ceil(max(top_left[1], bottom_right[1]))) + pad)
+            if not self.config:
+                return (0, 0, 0, 0)
+            so = self.config.screen_origin
+            return (so, so, so + self.config.screen_width, so + self.config.screen_height)
+        so = self.config.screen_origin
+        top_left = self._screen_point_from_view(0, 0) or (so, so)
+        bottom_right = self._screen_point_from_view(self.width(), self.height()) or (so + self.config.screen_width, so + self.config.screen_height)
+        min_x = max(so, int(math.floor(min(top_left[0], bottom_right[0]))) - pad)
+        min_y = max(so, int(math.floor(min(top_left[1], bottom_right[1]))) - pad)
+        max_x = min(so + self.config.screen_width, int(math.ceil(max(top_left[0], bottom_right[0]))) + pad)
+        max_y = min(so + self.config.screen_height, int(math.ceil(max(top_left[1], bottom_right[1]))) + pad)
         return (min_x, min_y, max_x, max_y)
 
     def _rebuild_pixel_image(self):
@@ -104,22 +109,27 @@ class View3D(QWidget):
 
         sw = self.config.screen_width
         sh = self.config.screen_height
+        so = self.config.screen_origin
         img = QImage(sw, sh, QImage.Format.Format_ARGB32_Premultiplied)
         img.fill(QColor(0, 0, 0, 0))
 
         for result in self.rasterized_results:
             color = result.triangle.color
             for (px, py), ratio in result.coverage_ratio.items():
-                if 0 <= px < sw and 0 <= py < sh:
-                    img.setPixelColor(px, py, QColor(color[0], color[1], color[2], int(210 * ratio)))
+                local_x = px - so
+                local_y = py - so
+                if 0 <= local_x < sw and 0 <= local_y < sh:
+                    img.setPixelColor(local_x, local_y, QColor(color[0], color[1], color[2], int(210 * ratio)))
         self._pixel_image = img
 
         if self.config.msaa > 1 and self.rasterizer:
             img_msaa = QImage(sw, sh, QImage.Format.Format_ARGB32_Premultiplied)
             img_msaa.fill(QColor(0, 0, 0, 0))
             for (px, py), (r, g, b) in self.rasterizer.resolve_msaa(self.rasterized_results).items():
-                if 0 <= px < sw and 0 <= py < sh:
-                    img_msaa.setPixelColor(px, py, QColor(r, g, b, 205))
+                local_x = px - so
+                local_y = py - so
+                if 0 <= local_x < sw and 0 <= local_y < sh:
+                    img_msaa.setPixelColor(local_x, local_y, QColor(r, g, b, 205))
             self._pixel_image_msaa = img_msaa
         else:
             self._pixel_image_msaa = None
@@ -131,8 +141,10 @@ class View3D(QWidget):
             return (x, y, z)
 
         max_dim = max(1, self.config.screen_width, self.config.screen_height)
-        nx = ((x - self.config.screen_width / 2) / max_dim) * 2
-        ny = ((self.config.screen_height / 2 - y) / max_dim) * 2
+        center_x = self.config.screen_origin + self.config.screen_width / 2
+        center_y = self.config.screen_origin + self.config.screen_height / 2
+        nx = ((x - center_x) / max_dim) * 2
+        ny = ((center_y - y) / max_dim) * 2
         nz = z * 0.75
         return (nx, ny, nz)
 
@@ -231,8 +243,10 @@ class View3D(QWidget):
         nx = (vx - cx) / scale
         ny = (cy - vy) / scale
         max_dim = max(1, self.config.screen_width, self.config.screen_height)
-        sx = self.config.screen_width / 2 + (nx * max_dim / 2)
-        sy = self.config.screen_height / 2 - (ny * max_dim / 2)
+        center_x = self.config.screen_origin + self.config.screen_width / 2
+        center_y = self.config.screen_origin + self.config.screen_height / 2
+        sx = center_x + (nx * max_dim / 2)
+        sy = center_y - (ny * max_dim / 2)
         return (sx, sy)
 
     def paintEvent(self, event):
@@ -276,7 +290,7 @@ class View3D(QWidget):
         ordered = sorted(
             enumerate(self.triangles),
             key=lambda item: sum(
-                self._transform(v[0], v[1], v[2])[2] if all(math.isfinite(value) for value in v) else 0.0
+                self._transform(v[0] - self.config.coordinate_offset, v[1] - self.config.coordinate_offset, v[2])[2] if all(math.isfinite(value) for value in v) else 0.0
                 for v in item[1].vertices
             ) / 3,
         )
@@ -296,11 +310,12 @@ class View3D(QWidget):
     def _draw_background_panel(self, painter: QPainter):
         sw = self.config.screen_width
         sh = self.config.screen_height
+        so = self.config.screen_origin
         polygon = self._projected_polygon([
-            (0, 0, 0),
-            (sw, 0, 0),
-            (sw, sh, 0),
-            (0, sh, 0),
+            (so, so, 0),
+            (so + sw, so, 0),
+            (so + sw, so + sh, 0),
+            (so, so + sh, 0),
         ])
 
         painter.setBrush(QBrush(QColor(55, 60, 76, 95)))
@@ -352,16 +367,17 @@ class View3D(QWidget):
     def _draw_tile_grid(self, painter: QPainter):
         sw = self.config.screen_width
         sh = self.config.screen_height
+        so = self.config.screen_origin
         tw = self.config.tile_width
         th = self.config.tile_height
 
         painter.setPen(QPen(QColor(75, 82, 105), 1))
         for i in range(self.config.tile_count_x + 1):
-            x = min(i * tw, sw)
-            self._draw_projected_line(painter, (x, 0, 0), (x, sh, 0))
+            x = so + min(i * tw, sw)
+            self._draw_projected_line(painter, (x, so, 0), (x, so + sh, 0))
         for j in range(self.config.tile_count_y + 1):
-            y = min(j * th, sh)
-            self._draw_projected_line(painter, (0, y, 0), (sw, y, 0))
+            y = so + min(j * th, sh)
+            self._draw_projected_line(painter, (so, y, 0), (so + sw, y, 0))
 
     def _draw_tile_labels(self, painter: QPainter):
         if self.config.tile_width <= 0 or self.config.tile_height <= 0:
@@ -372,13 +388,14 @@ class View3D(QWidget):
 
         tw = self.config.tile_width
         th = self.config.tile_height
+        so = self.config.screen_origin
         painter.setFont(QFont("Consolas", max(7, min(10, int(pixel_size * 2)))))
         painter.setPen(QPen(QColor(135, 140, 165)))
         fm = QFontMetrics(painter.font())
 
         for i in range(self.config.tile_count_x):
             for j in range(self.config.tile_count_y):
-                sx, sy = self._project(i * tw + tw / 2, j * th + th / 2, 0)
+                sx, sy = self._project(so + i * tw + tw / 2, so + j * th + th / 2, 0)
                 label = f"({i},{j})"
                 painter.drawText(int(sx - fm.horizontalAdvance(label) / 2), int(sy + fm.height() / 3), label)
 
@@ -391,18 +408,19 @@ class View3D(QWidget):
 
         sw = self.config.screen_width
         sh = self.config.screen_height
+        so = self.config.screen_origin
         tw = self.config.tile_width
         th = self.config.tile_height
         painter.setFont(QFont("Consolas", 8))
         painter.setPen(QPen(QColor(150, 155, 180)))
 
         for i in range(self.config.tile_count_x + 1):
-            x = min(i * tw, sw)
-            sx, sy = self._project(x, 0, 0)
+            x = so + min(i * tw, sw)
+            sx, sy = self._project(x, so, 0)
             painter.drawText(int(sx - 10), int(sy - 5), str(x))
         for j in range(self.config.tile_count_y + 1):
-            y = min(j * th, sh)
-            sx, sy = self._project(0, y, 0)
+            y = so + min(j * th, sh)
+            sx, sy = self._project(so, y, 0)
             painter.drawText(int(sx - 32), int(sy + 4), str(y))
 
     def _draw_pixel_grid_and_labels(self, painter: QPainter):
@@ -492,7 +510,8 @@ class View3D(QWidget):
         if not finite_vertices:
             return
 
-        points = [self._safe_project(v[0], v[1], v[2]) for v in finite_vertices]
+        coord_offset = self.config.coordinate_offset
+        points = [self._safe_project(v[0] - coord_offset, v[1] - coord_offset, v[2]) for v in finite_vertices]
         points = [point for point in points if point is not None]
         if not points:
             return
@@ -506,8 +525,10 @@ class View3D(QWidget):
             painter.drawPolygon(polygon)
 
         for v in finite_vertices:
-            base = self._safe_project(v[0], v[1], 0)
-            tip = self._safe_project(v[0], v[1], v[2])
+            draw_x = v[0] - coord_offset
+            draw_y = v[1] - coord_offset
+            base = self._safe_project(draw_x, draw_y, 0)
+            tip = self._safe_project(draw_x, draw_y, v[2])
             if base is None or tip is None:
                 continue
             painter.setPen(QPen(QColor(180, 185, 205, 90), 1, Qt.PenStyle.DashLine))
@@ -517,7 +538,7 @@ class View3D(QWidget):
         painter.setPen(QPen(QColor(245, 245, 245), 1))
         painter.setFont(QFont("Consolas", 8))
         for k, v in enumerate(finite_vertices):
-            projected = self._safe_project(v[0], v[1], v[2])
+            projected = self._safe_project(v[0] - coord_offset, v[1] - coord_offset, v[2])
             if projected is None:
                 continue
             sx, sy = projected
@@ -542,13 +563,14 @@ class View3D(QWidget):
     def _draw_screen_border(self, painter: QPainter):
         sw = self.config.screen_width
         sh = self.config.screen_height
+        so = self.config.screen_origin
         painter.setBrush(Qt.BrushStyle.NoBrush)
         painter.setPen(QPen(QColor(170, 175, 195), 2))
-        self._draw_projected_rect(painter, 0, 0, sw, sh, 0.02)
-        sx, sy = self._project(0, 0, 0.02)
+        self._draw_projected_rect(painter, so, so, sw, sh, 0.02)
+        sx, sy = self._project(so, so, 0.02)
         painter.setFont(QFont("Arial", 9))
         painter.setPen(QPen(QColor(210, 212, 225)))
-        painter.drawText(int(sx), int(sy - 6), f"Screen {sw}x{sh}")
+        painter.drawText(int(sx), int(sy - 6), f"Screen {sw}x{sh} @ {so}")
 
     def _draw_axes(self, painter: QPainter):
         origin = (self.width() - 82, self.height() - 62)
@@ -688,9 +710,10 @@ class View3D(QWidget):
         if not screen_pos or not self.config:
             return
         sx, sy = screen_pos
-        if self.config.tile_width > 0 and self.config.tile_height > 0 and 0 <= sx < self.config.screen_width and 0 <= sy < self.config.screen_height:
-            tile_x = int(sx) // self.config.tile_width
-            tile_y = int(sy) // self.config.tile_height
+        so = self.config.screen_origin
+        if self.config.tile_width > 0 and self.config.tile_height > 0 and so <= sx < so + self.config.screen_width and so <= sy < so + self.config.screen_height:
+            tile_x = int(sx - so) // self.config.tile_width
+            tile_y = int(sy - so) // self.config.tile_height
             if select:
                 self.selected_msaa_pixel = (int(sx), int(sy))
                 self.update()

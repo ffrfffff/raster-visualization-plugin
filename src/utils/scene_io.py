@@ -29,6 +29,8 @@ def load_scene(path: str) -> Tuple[RasterConfig, List[Triangle]]:
         msaa=_parse_msaa(config_data),
         screen_width=screen_width,
         screen_height=screen_height,
+        screen_offset=_parse_optional_int(config_data, "screen_offset", 0),
+        subtract_screen_offset=_parse_optional_bool(config_data, "subtract_screen_offset", False),
         depth_surface_width=depth_width,
         depth_surface_height=depth_height,
         clip_region=_parse_region(config_data, "clip_region"),
@@ -60,6 +62,22 @@ def _parse_msaa(config: dict) -> int:
     value = config.get("msaa")
     if not isinstance(value, int) or isinstance(value, bool) or value not in (1, 2, 4, 8, 16):
         raise ValueError("config.msaa must be one of 1, 2, 4, 8, 16")
+    return value
+
+
+def _parse_optional_int(config: dict, key: str, default: int) -> int:
+    value = config.get(key, default)
+    if not isinstance(value, int) or isinstance(value, bool):
+        raise ValueError(f"config.{key} must be an integer")
+    if value < 0 or value > 64 * 1024:
+        raise ValueError(f"config.{key} must be in [0, 65536]")
+    return value
+
+
+def _parse_optional_bool(config: dict, key: str, default: bool) -> bool:
+    value = config.get(key, default)
+    if not isinstance(value, bool):
+        raise ValueError(f"config.{key} must be a boolean")
     return value
 
 

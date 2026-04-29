@@ -57,7 +57,8 @@ class DepthSideView(QWidget):
         width = self.width() - self.margin_left - self.margin_right
         if self.config.screen_width <= 0:
             return self._safe_view_coord(self.margin_left + self.offset_x)
-        base = self.margin_left + (screen_x / self.config.screen_width) * width
+        relative_x = screen_x - self.config.coordinate_offset - self.config.screen_origin
+        base = self.margin_left + (relative_x / self.config.screen_width) * width
         mapped = self.margin_left + (base - self.margin_left) * self.zoom + self.offset_x
         return self._safe_view_coord(mapped)
 
@@ -109,9 +110,11 @@ class DepthSideView(QWidget):
         painter.drawText(5, self.height() // 2, "Depth")
 
         # X 轴标签
-        painter.drawText(int(self._map_x(0)), y_axis_bottom + 15, "0")
-        painter.drawText(int(self._map_x(self.config.screen_width)) - 30, y_axis_bottom + 15,
-                         str(self.config.screen_width))
+        screen_min_x = self.config.screen_origin + self.config.coordinate_offset
+        screen_max_x = self.config.screen_origin + self.config.screen_width + self.config.coordinate_offset
+        painter.drawText(int(self._map_x(screen_min_x)), y_axis_bottom + 15, str(screen_min_x))
+        painter.drawText(int(self._map_x(screen_max_x)) - 30, y_axis_bottom + 15,
+                         str(screen_max_x))
 
         # 绘制三角形深度剖面
         if self.triangles:
