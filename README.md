@@ -235,7 +235,8 @@ python main.py
 ## 版本日志
 
 ### v1.4.6 (2026-04-29)
-- PB 导入解析现在复用导出侧紧凑布局规则，通过 `get_filtered_state_block_members()` 计算 state block 长度，保证隐藏 state word 不占 memory 空间且 `fa/fb/ba/bb` 顺序一致。
+- PB 导入解析现在复用导出侧紧凑布局规则，通过 `get_filtered_state_block_members()` 计算 state block 长度，GUI 导入时会先询问 primitive 数量和 vertex 数量，分别用来确定 `index_data` 结束位置和读取的 `original_position_coord` 数量，保证隐藏 state word 不占 memory 空间且 `fa/fb/ba/bb` 顺序一致。
+- packed struct 子字段按 SystemVerilog 声明顺序从高 bit 到低 bit 拆分和拼接，确保解析表、导出表与 `randomized_3d_memory` 的父字段值一致。
 - PB 导出仍由 `pb_instruction` 中的 `this_is_point_primblk` 控制 `point_pitch` 与 `index_data` 互斥，导出时 `ispa_objtype` 与 `this_is_point_primblk` 保持一致。
 - PB 导入根据 `ispa_objtype` 字段判断 `point_pitch` 与 `index_data` 的互斥关系：`ispa_objtype` 为 2、3、4、6 时使用 `point_pitch`，其他值使用 `index_data`。
 - 纯 `randomized_3d_memory` dump 无法从 `ispa_objtype` 推断模式时，会按 point/index 两种 compact payload layout 尝试推断。

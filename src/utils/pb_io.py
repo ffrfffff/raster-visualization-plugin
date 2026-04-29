@@ -57,12 +57,22 @@ class PbInstructionRandom:
     def prim_header(self) -> int:
         return _pack_concat_fields(PRIM_HEADER_FIELDS, self.prim_header_values)
 
-def load_pb_dump(path: str, output_path: Optional[str] = None) -> Tuple[RasterConfig, List[Triangle]]:
+def load_pb_dump(
+    path: str,
+    output_path: Optional[str] = None,
+    primitive_count: Optional[int] = None,
+    vertex_count: Optional[int] = None,
+) -> Tuple[RasterConfig, List[Triangle]]:
     try:
         with open(path, "r", encoding="utf-8") as f:
             text = f.read()
     except OSError as exc:
         raise ValueError(f"Failed to read PB dump: {exc}") from exc
+
+    if primitive_count is not None and primitive_count < 1:
+        raise ValueError("primitive_count must be at least 1")
+    if vertex_count is not None and vertex_count < 3:
+        raise ValueError("vertex_count must be at least 3")
 
     point_mode = _infer_point_mode_from_ispa_objtype_text(text)
     coords = _parse_position_coord_literals(text)
@@ -76,9 +86,10 @@ def load_pb_dump(path: str, output_path: Optional[str] = None) -> Tuple[RasterCo
         if point_mode is None:
             point_mode = _infer_point_mode_from_layout(words)
         if not coords:
-            coords = _extract_position_coords_from_words(words, point_mode)
+            coords = _extract_position_coords_from_words(words, point_mode, primitive_count, vertex_count)
         if point_mode == 0 and not index_data:
-            primitive_count = len(coords) // 3
+            if primitive_count is None:
+                primitive_count = len(coords) // 3
             index_data = _extract_index_data_from_words(words, primitive_count)
 
     if len(coords) < 3:
@@ -449,10 +460,22 @@ def _random_primblk_cfg_values() -> Dict[str, int]:
     return values
 
 
-def _pack_concat_fields(fields: Tuple[Tuple[str, int], ...], values: Dict[str, int]) -> int:
+def _pack_concat_fields(fields, values: Dict[str, int]) -> int:
+    """Pack field values into a single integer, MSB-first (first field = highest bits).
+
+    *fields* can be either ``Tuple[Tuple[str, int], ...]`` or
+    ``Tuple[FieldSpec, ...]`` – both are accepted.
+    """
     raw = 0
-    for name, width in fields:
-        raw = (raw << width) | (values[name] & ((1 << width) - 1))
+    total_width = sum(f.width if hasattr(f, 'width') else f[1] for f in fields)
+    bit_pos = total_width
+    for f in fields:
+        if hasattr(f, 'width'):
+            name, width = f.name, f.width
+        else:
+            name, width = f
+        bit_pos -= width
+        raw |= (values[name] & ((1 << width) - 1)) << bit_pos
     return raw
 
 
@@ -693,18 +716,31 @@ def _coord_start_bit(payload_start_bit: int, index_words: List[int], this_is_poi
 def _extract_position_coords_from_words(
     words: Dict[int, int],
     this_is_point_primblk: Optional[int] = None,
+    primitive_count: Optional[int] = None,
+    vertex_count: Optional[int] = None,
 ) -> List[Tuple[float, float, float]]:
     if this_is_point_primblk is None:
-        return _extract_position_coords_from_words(words, _infer_point_mode_from_layout(words))
+        return _extract_position_coords_from_words(words, _infer_point_mode_from_layout(words), primitive_count, vertex_count)
 
     explicit_count = _extract_vertex_total(words)
     index_data_start_bit = _index_data_start_bit(words)
     point_mode = this_is_point_primblk
-    primitive_count = explicit_count // 3 if explicit_count else _primitive_count_from_words(words, index_data_start_bit)
-    index_words = [] if point_mode else [0] * primitive_count
+    if point_mode:
+        emitted_primitive_count = 0
+    elif primitive_count is not None:
+        emitted_primitive_count = primitive_count
+    else:
+        emitted_primitive_count = _primitive_count_from_words(words, index_data_start_bit)
+        if explicit_count and explicit_count % 3 == 0:
+            emitted_primitive_count = min(emitted_primitive_count, explicit_count // 3)
+    index_words = [] if point_mode else [0] * emitted_primitive_count
     coord_start_bit = _coord_start_bit(index_data_start_bit, index_words, point_mode)
     available_count = _available_position_coord_count(words, coord_start_bit)
-    if explicit_count and explicit_count <= available_count:
+    if vertex_count is not None:
+        if vertex_count > available_count:
+            raise ValueError("PB dump does not contain enough original_position_coord data for the provided vertex count")
+        count = vertex_count
+    elif explicit_count and explicit_count <= available_count and (point_mode or explicit_count % 3 == 0):
         count = explicit_count
     else:
         count = available_count
@@ -860,14 +896,15 @@ def _pack_index_data(
     for value in (index0, index1, index2):
         if value < 0 or value >= (1 << 6):
             raise ValueError(f"Index value {value} does not fit in 6 bits")
+    offsets = STRUCT_FIELD_OFFSETS["index_data_s"]
     return (
-        index0
-        | ((edge_ab & 0x1) << 6)
-        | (index1 << 8)
-        | ((edge_bc & 0x1) << 14)
-        | (index2 << 16)
-        | ((edge_ca & 0x1) << 22)
-        | ((bf_flag & 0x1) << 23)
+        (index0 << offsets["ix_index_0"])
+        | ((edge_ab & 0x1) << offsets["ix_edge_flag_ab"])
+        | (index1 << offsets["ix_index_1"])
+        | ((edge_bc & 0x1) << offsets["ix_edge_flag_bc"])
+        | (index2 << offsets["ix_index_2"])
+        | ((edge_ca & 0x1) << offsets["ix_edge_flag_ca"])
+        | ((bf_flag & 0x1) << offsets["ix_bf_flag"])
     )
 
 

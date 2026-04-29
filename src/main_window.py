@@ -2,7 +2,7 @@ from PyQt6.QtWidgets import (
     QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
     QSplitter, QMenuBar, QMenu, QToolBar, QStatusBar,
     QCheckBox, QLabel, QMessageBox, QTabWidget, QPushButton,
-    QSpinBox, QScrollBar, QGridLayout, QFileDialog
+    QSpinBox, QScrollBar, QGridLayout, QFileDialog, QInputDialog
 )
 from PyQt6.QtCore import Qt
 from pathlib import Path
@@ -505,12 +505,41 @@ class MainWindow(QMainWindow):
         if not path:
             return
 
+        primitive_count, ok = QInputDialog.getInt(
+            self,
+            "Primitive Count",
+            "Enter primitive count for this PB dump:",
+            1,
+            1,
+            21,
+            1,
+        )
+        if not ok:
+            return
+
+        vertex_count, ok = QInputDialog.getInt(
+            self,
+            "Vertex Count",
+            "Enter vertex count for this PB dump:",
+            primitive_count * 3,
+            3,
+            63,
+            1,
+        )
+        if not ok:
+            return
+
         from pathlib import Path as _Path
         input_stem = _Path(path).stem
         parsed_path = str(self.OUTPUT_DIR / f"parsed_{input_stem}.sv")
 
         try:
-            config, triangles = load_pb_dump(path, output_path=parsed_path)
+            config, triangles = load_pb_dump(
+                path,
+                output_path=parsed_path,
+                primitive_count=primitive_count,
+                vertex_count=vertex_count,
+            )
         except ValueError as exc:
             QMessageBox.warning(self, "Import Failed", str(exc))
             return
