@@ -33,7 +33,7 @@ python main.py
 - 三角形列表展示每个三角形的三个顶点坐标。
 - 支持新增、删除、清空三角形。
 - 支持在 GUI 中手动编辑顶点坐标。
-- X/Y 坐标使用 Q16.8 定点格式（16 位整数 + 8 位小数）。
+- X/Y 坐标使用 unsigned Q16.8 定点格式（16 位整数 + 8 位小数）。
 - Z 坐标使用 FP32 浮点格式，深度范围显示为 `[-1, 1]`。
 - 顶点编辑支持 Decimal / Binary / Hexadecimal 三种格式切换。
 - 坐标显示会根据当前格式自动转换，便于对照硬件/协议中的定点或浮点表示。
@@ -104,7 +104,7 @@ python main.py
 - PB 生成规则独立维护在 `src/utils/pb_rules.py`，后续可继续扩展条件规则，例如根据控制变量决定某些 word 是否生成。
 - 状态块字段表按 `gpu_isp_pds_bif_pkg` 的 packed struct 展开：PDS、ISP、vertex varying/position format、point pitch 都逐字段列出。
 - 支持 24-bit `index_data_s`：`ix_index_0`、AB flag、reserved0、`ix_index_1`、BC flag、reserved1、`ix_index_2`、CA flag、BF flag 按结构体顺序打包。
-- v1 紧凑打包 state block、`point_pitch` / `index_data_s` 和 `original_position_coord`：`isp_state_word_fa/fb/ba/bb` 按 fa、fb、ba、bb 顺序写入；`this_is_point_primblk` 在独立 `pb_instruction` 随机块中生成，`pb_instruction` 表格同时输出 `primitive_block_instruction` 和 `primblk_cfg` 字段；为 1 时显示并写入 `point_pitch`、不显示 `index_data`，为 0 时显示并写入 `index_data`、不显示 `point_pitch`；index mode 下每个 `index_data_s` 为 24 bit，全部写完后按 `align_up(index_data_start_bit + primitive_count * 24, 32)` 计算 `original_position_coord` 起点，因此 padding 随 primitive 数量自动变化，不是固定 16 bit；每个顶点占 80 bit，X/Y 为 24-bit signed Q16.8，Z 为 32-bit FP32。
+- v1 紧凑打包 state block、`point_pitch` / `index_data_s` 和 `original_position_coord`：`isp_state_word_fa/fb/ba/bb` 按 fa、fb、ba、bb 顺序写入；`this_is_point_primblk` 在独立 `pb_instruction` 随机块中生成，`pb_instruction` 表格同时输出 `primitive_block_instruction` 和 `primblk_cfg` 字段；为 1 时显示并写入 `point_pitch`、不显示 `index_data`，为 0 时显示并写入 `index_data`、不显示 `point_pitch`；index mode 下每个 `index_data_s` 为 24 bit，全部写完后按 `align_up(index_data_start_bit + primitive_count * 24, 32)` 计算 `original_position_coord` 起点，因此 padding 随 primitive 数量自动变化，不是固定 16 bit；每个顶点占 80 bit，X/Y 为 24-bit unsigned Q16.8，Z 为 32-bit FP32。
 - 导入时优先使用 `index_data_s` 还原 primitive 与顶点索引关系；没有 index table 时才回退为每 3 个顶点组成一个三角形。
 - 支持通过 `File > Export PB Dump...` 从当前 GUI 三角形生成 Doc1-like dump，导出文件使用统一表格：`field / values / note` 三列，值为 `n'hxxx` 格式，子字段缩进显示，非 integral 行把 schema 名称显示在 field 列；最后写最终 `256'h...` memory dump。
 - 导出时 `pds_state_word0` 和 `pds_state_word1` 每次随机生成 32-bit 值，填充到字段表和最终 memory dump。
@@ -235,6 +235,9 @@ python main.py
 
 ## 版本日志
 
+### v1.4.8 (2026-04-29)
+- PB `original_position_coord` 和坐标编辑工具中的 X/Y 改为 24-bit unsigned Q16.8 解析与打包；例如 `24'hc40000` 解析为 `50176.0`，不再按 signed 值解析为负数。
+
 ### v1.4.7 (2026-04-29)
 - 配置面板新增 `Config Number Base`，Screen Size、Depth Surface Size、Render Target Size、Clip Region、Scissor、Tile Size 六组输入可在 Binary / Decimal / Hexadecimal 间切换；输入范围统一扩展为 `0..64K`，二进制、十进制、十六进制会自动换算并保留同一个内部数值。
 
@@ -322,7 +325,7 @@ python main.py
 ### v1.2.0 (2026-04-27)
 - 新增 PB Dump 导入/导出 v1，支持 Doc1-like 硬件验证环境 256-bit memory dump。
 - 正确按 `256'h...` 右侧低 bit 的规则解析和生成 `primitive_block_addr+N` memory word。
-- 支持 80-bit `original_position_coord` 顶点格式：X/Y 为 24-bit signed Q16.8，Z 为 32-bit FP32。
+- 支持 80-bit `original_position_coord` 顶点格式：X/Y 为 24-bit unsigned Q16.8，Z 为 32-bit FP32。
 - 导入 PB dump 后自动同步三角形列表、Top/Depth/3D 视图和 Popout；导出包含字段表、坐标表和最终 memory dump，便于插件 round-trip 和逐项对齐验证。
 - `.gitignore` 已排除 Doc1 原始文档和解包目录，避免临时验证资料进入版本库。
 - 当前 PB 反解析为 Doc1 模板化 v1，不保证生成完整硬件可执行 PB/control stream。

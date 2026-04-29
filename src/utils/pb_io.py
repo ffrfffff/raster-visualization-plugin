@@ -925,18 +925,15 @@ def _unpack_position_coord(raw: int) -> Tuple[float, float, float]:
 
 def _pack_q16_8_24(value: float) -> int:
     scaled = int(round(value * 256.0))
-    minimum = -(1 << 23)
-    maximum = (1 << 23) - 1
+    minimum = 0
+    maximum = (1 << 24) - 1
     if scaled < minimum or scaled > maximum:
-        raise ValueError(f"Q16.8 24-bit coordinate out of range: {value}")
-    return scaled & 0xFFFFFF
+        raise ValueError(f"Unsigned Q16.8 24-bit coordinate out of range: {value}")
+    return scaled
 
 
 def _unpack_q16_8_24(raw: int) -> float:
-    raw &= 0xFFFFFF
-    if raw & 0x800000:
-        raw -= 1 << 24
-    return raw / 256.0
+    return (raw & 0xFFFFFF) / 256.0
 
 
 def _pack_fp32(value: float) -> int:

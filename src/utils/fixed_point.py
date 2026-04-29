@@ -1,7 +1,7 @@
 """Q16.8 定点数和 FP32 浮点数格式转换工具
 
-Q16.8: 16位整数 + 8位小数，共24位，用32位整数存储（高8位未用或符号扩展）
-范围: -65536.0 ~ 65535.99609375
+Q16.8: 16位整数 + 8位小数，共24位，用32位整数存储
+范围: 0.0 ~ 65535.99609375
 精度: 1/256 ≈ 0.00390625
 """
 import struct
@@ -9,22 +9,16 @@ from typing import Tuple
 
 
 def float_to_q16_8(value: float) -> int:
-    """浮点数转 Q16.8 定点数"""
-    scaled = value * 256.0
-    if scaled >= 0:
-        return int(round(scaled)) & 0xFFFFFFFF
-    else:
-        return int(round(scaled)) & 0xFFFFFFFF
+    """浮点数转 unsigned Q16.8 定点数"""
+    scaled = int(round(value * 256.0))
+    if scaled < 0 or scaled > 0xFFFFFF:
+        raise ValueError(f"Unsigned Q16.8 value out of range: {value}")
+    return scaled
 
 
 def q16_8_to_float(raw: int) -> float:
-    """Q16.8 定点数转浮点数（支持32位有符号解释）"""
-    if raw & 0x800000:
-        # 负数，符号扩展到32位
-        raw = raw | 0xFF000000
-    # 转为有符号32位整数
-    signed = raw if raw < 0x80000000 else raw - 0x100000000
-    return signed / 256.0
+    """Unsigned Q16.8 定点数转浮点数"""
+    return (raw & 0xFFFFFF) / 256.0
 
 
 def float_to_fp32_bytes(value: float) -> bytes:
