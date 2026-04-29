@@ -2,6 +2,7 @@ from PyQt6.QtWidgets import QWidget, QToolTip
 from PyQt6.QtCore import Qt, QPoint, QRect
 from PyQt6.QtGui import QPainter, QPen, QColor, QBrush, QFont, QPolygon, QFontMetrics, QImage
 from typing import List, Tuple, Optional
+import math
 from ..models.config import RasterConfig
 from ..models.triangle import Triangle, RasterizedTriangle
 from ..renderers.software_rasterizer import SoftwareRasterizer
@@ -104,6 +105,21 @@ class RasterView(QWidget):
 
         self._pixel_image_dirty = False
 
+    def _safe_int(self, value: float) -> Optional[int]:
+        if not isinstance(value, (int, float)):
+            return None
+        if not math.isfinite(value):
+            return None
+        if value < -1_000_000 or value > 1_000_000:
+            return None
+        return int(value)
+
+    def _safe_screen_point(self, x: float, y: float) -> Optional[QPoint]:
+        sx = self._safe_int(x)
+        sy = self._safe_int(y)
+        if sx is None or sy is None:
+            return None
+        return QPoint(sx, sy)
     def _screen_to_view(self, sx: float, sy: float) -> Tuple[float, float]:
         return (self.offset_x + sx * self.zoom, self.offset_y + sy * self.zoom)
 
@@ -298,20 +314,26 @@ class RasterView(QWidget):
 
             polygon = QPolygon()
             for v in triangle.vertices:
-                polygon.append(QPoint(int(ox + v[0] * scale), int(oy + v[1] * scale)))
-            painter.drawPolygon(polygon)
+                point = self._safe_screen_point(ox + v[0] * scale, oy + v[1] * scale)
+                if point is not None:
+                    polygon.append(point)
+            if polygon.size() >= 2:
+                painter.drawPolygon(polygon)
 
             painter.setBrush(QBrush(color))
             label_font_size = max(7, min(11, int(9 * min(scale, 2))))
             painter.setFont(QFont("Consolas", label_font_size))
             for vi, v in enumerate(triangle.vertices):
-                vx = int(ox + v[0] * scale)
-                vy = int(oy + v[1] * scale)
+                vx = ox + v[0] * scale
+                vy = oy + v[1] * scale
+                point = self._safe_screen_point(vx, vy)
+                if point is None:
+                    continue
                 painter.setPen(QPen(QColor(255, 255, 255), 1))
-                painter.drawEllipse(vx - 5, vy - 5, 10, 10)
+                painter.drawEllipse(point.x() - 5, point.y() - 5, 10, 10)
                 if self.show_vertex_labels:
                     painter.setPen(QPen(color))
-                    painter.drawText(vx + 8, vy - 6, f"V{vi}({v[0]:.0f},{v[1]:.0f},z={v[2]:.2f})")
+                    painter.drawText(point.x() + 8, point.y() - 6, f"V{vi}({v[0]:.0f},{v[1]:.0f},z={v[2]:.2f})")
 
         # ---- MSAA sample pattern 预览 ----
         if self.show_msaa_samples and self.config:

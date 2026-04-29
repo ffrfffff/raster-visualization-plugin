@@ -1,4 +1,5 @@
 from typing import List, Tuple, Dict, Set
+import math
 from ..models.config import RasterConfig
 from ..models.triangle import Triangle, RasterizedTriangle
 from ..utils.geometry import (
@@ -28,6 +29,9 @@ class SoftwareRasterizer:
     def rasterize_triangle(self, triangle: Triangle) -> RasterizedTriangle:
         """光栅化单个三角形，正确模拟 MSAA"""
         result = RasterizedTriangle(triangle=triangle)
+
+        if any(not math.isfinite(component) for vertex in triangle.vertices for component in vertex):
+            return result
 
         vertices = triangle.vertices
         v0 = (vertices[0][0], vertices[0][1])

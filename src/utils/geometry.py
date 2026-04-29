@@ -1,4 +1,5 @@
 from typing import Tuple
+import math
 import numpy as np
 
 
@@ -50,8 +51,11 @@ def interpolate_depth(p: Tuple[float, float],
 
 def get_triangle_bounds(vertices: list) -> Tuple[int, int, int, int]:
     """获取三角形在屏幕空间的整数边界框"""
-    xs = [int(v[0]) for v in vertices]
-    ys = [int(v[1]) for v in vertices]
+    finite_vertices = [v for v in vertices if math.isfinite(v[0]) and math.isfinite(v[1])]
+    if not finite_vertices:
+        return (0, 0, 0, 0)
+    xs = [int(v[0]) for v in finite_vertices]
+    ys = [int(v[1]) for v in finite_vertices]
     return (min(xs), min(ys), max(xs) + 1, max(ys) + 1)
 
 

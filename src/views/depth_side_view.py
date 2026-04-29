@@ -2,6 +2,7 @@ from PyQt6.QtWidgets import QWidget
 from PyQt6.QtCore import Qt, QPointF, QPoint
 from PyQt6.QtGui import QPainter, QPen, QColor, QBrush, QFont, QPolygonF
 from typing import List, Tuple, Optional
+import math
 from ..models.config import RasterConfig
 from ..models.triangle import Triangle, RasterizedTriangle
 
@@ -44,19 +45,26 @@ class DepthSideView(QWidget):
         self.rasterized_results = rasterized
         self.update()
 
+    def _safe_view_coord(self, value: float) -> float:
+        if not math.isfinite(value):
+            return 0.0
+        return max(-1_000_000.0, min(1_000_000.0, value))
+
     def _map_x(self, screen_x: float) -> float:
         """将屏幕 X 坐标映射到视图坐标（含缩放偏移）"""
         if not self.config:
-            return screen_x
+            return self._safe_view_coord(screen_x)
         width = self.width() - self.margin_left - self.margin_right
         base = self.margin_left + (screen_x / self.config.screen_width) * width
-        return self.margin_left + (base - self.margin_left) * self.zoom + self.offset_x
+        mapped = self.margin_left + (base - self.margin_left) * self.zoom + self.offset_x
+        return self._safe_view_coord(mapped)
 
     def _map_y(self, depth: float) -> float:
         """将深度值 [-1, 1] 映射到视图坐标（含缩放偏移）"""
         height = self.height() - self.margin_top - self.margin_bottom
         base = self.margin_top + ((1 - depth) / 2) * height
-        return self.margin_top + (base - self.margin_top) * self.zoom + self.offset_y
+        mapped = self.margin_top + (base - self.margin_top) * self.zoom + self.offset_y
+        return self._safe_view_coord(mapped)
 
     def paintEvent(self, event):
         painter = QPainter(self)
@@ -108,9 +116,13 @@ class DepthSideView(QWidget):
             for i, triangle in enumerate(self.triangles):
                 color = QColor(triangle.color[0], triangle.color[1], triangle.color[2])
 
+                finite_vertices = [v for v in triangle.vertices if math.isfinite(v[0]) and math.isfinite(v[2])]
+                if not finite_vertices:
+                    continue
+
                 # 绘制填充区域
                 polygon = QPolygonF()
-                for v in triangle.vertices:
+                for v in finite_vertices:
                     x = self._map_x(v[0])
                     y = self._map_y(v[2])
                     polygon.append(QPointF(x, y))
@@ -126,6 +138,8 @@ class DepthSideView(QWidget):
                 for j in range(3):
                     v0 = triangle.vertices[j]
                     v1 = triangle.vertices[(j + 1) % 3]
+                    if not all(math.isfinite(value) for value in (v0[0], v0[2], v1[0], v1[2])):
+                        continue
                     x0 = self._map_x(v0[0])
                     y0 = self._map_y(v0[2])
                     x1 = self._map_x(v1[0])
@@ -135,7 +149,7 @@ class DepthSideView(QWidget):
                 # 绘制顶点标记
                 painter.setBrush(QBrush(color))
                 painter.setPen(QPen(QColor(255, 255, 255), 1))
-                for v in triangle.vertices:
+                for v in finite_vertices:
                     x = self._map_x(v[0])
                     y = self._map_y(v[2])
                     painter.drawEllipse(int(x - 5), int(y - 5), 10, 10)
@@ -143,15 +157,15 @@ class DepthSideView(QWidget):
                 # 深度值标签
                 painter.setFont(QFont("Arial", 8))
                 painter.setPen(QPen(color))
-                for v in triangle.vertices:
+                for v in finite_vertices:
                     x = self._map_x(v[0])
                     y = self._map_y(v[2])
                     painter.drawText(int(x + 10), int(y + 4), f"z={v[2]:.3f}")
 
                 # 三角形索引
                 painter.setFont(QFont("Arial", 9, QFont.Weight.Bold))
-                avg_x = sum(self._map_x(v[0]) for v in triangle.vertices) / 3
-                avg_y = sum(self._map_y(v[2]) for v in triangle.vertices) / 3
+                avg_x = sum(self._map_x(v[0]) for v in finite_vertices) / len(finite_vertices)
+                avg_y = sum(self._map_y(v[2]) for v in finite_vertices) / len(finite_vertices)
                 painter.drawText(int(avg_x + 10), int(avg_y - 10), f"T{i}")
 
         # 绘制像素深度点

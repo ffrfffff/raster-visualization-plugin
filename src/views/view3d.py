@@ -166,16 +166,37 @@ class View3D(QWidget):
         cy = self.height() / 2 + self.pan_y
         return (cx + x2 * scale, cy - y2 * scale)
 
+    def _safe_int(self, value: float) -> Optional[int]:
+        if not isinstance(value, (int, float)) or not math.isfinite(value):
+            return None
+        if value < -1_000_000 or value > 1_000_000:
+            return None
+        return int(value)
+
+    def _safe_project(self, x: float, y: float, z: float) -> Optional[Tuple[float, float]]:
+        if not all(math.isfinite(value) for value in (x, y, z)):
+            return None
+        sx, sy = self._project(x, y, z)
+        if self._safe_int(sx) is None or self._safe_int(sy) is None:
+            return None
+        return (sx, sy)
+
     def _projected_polygon(self, points: List[Tuple[float, float, float]]) -> QPolygonF:
         polygon = QPolygonF()
         for x, y, z in points:
-            sx, sy = self._project(x, y, z)
-            polygon.append(QPointF(sx, sy))
+            projected = self._safe_project(x, y, z)
+            if projected is not None:
+                sx, sy = projected
+                polygon.append(QPointF(sx, sy))
         return polygon
 
     def _draw_projected_line(self, painter: QPainter, p0: Tuple[float, float, float], p1: Tuple[float, float, float]):
-        x0, y0 = self._project(*p0)
-        x1, y1 = self._project(*p1)
+        projected0 = self._safe_project(*p0)
+        projected1 = self._safe_project(*p1)
+        if projected0 is None or projected1 is None:
+            return
+        x0, y0 = projected0
+        x1, y1 = projected1
         painter.drawLine(int(x0), int(y0), int(x1), int(y1))
 
     def _draw_projected_rect(self, painter: QPainter, x: float, y: float, w: float, h: float, z: float = 0.0):
@@ -254,7 +275,10 @@ class View3D(QWidget):
 
         ordered = sorted(
             enumerate(self.triangles),
-            key=lambda item: sum(self._transform(v[0], v[1], v[2])[2] for v in item[1].vertices) / 3,
+            key=lambda item: sum(
+                self._transform(v[0], v[1], v[2])[2] if all(math.isfinite(value) for value in v) else 0.0
+                for v in item[1].vertices
+            ) / 3,
         )
         for index, triangle in ordered:
             self._draw_triangle(painter, triangle, index)
@@ -460,35 +484,47 @@ class View3D(QWidget):
 
     def _draw_triangle(self, painter: QPainter, triangle: Triangle, index: int):
         color = QColor(triangle.color[0], triangle.color[1], triangle.color[2])
-        points = [self._project(v[0], v[1], v[2]) for v in triangle.vertices]
+        finite_vertices = [v for v in triangle.vertices if all(math.isfinite(value) for value in v)]
+        if not finite_vertices:
+            return
 
+        points = [self._safe_project(v[0], v[1], v[2]) for v in finite_vertices]
+        points = [point for point in points if point is not None]
+        if not points:
+            return
         polygon = QPolygonF()
         for sx, sy in points:
             polygon.append(QPointF(sx, sy))
 
         painter.setBrush(QBrush(QColor(color.red(), color.green(), color.blue(), 75)))
         painter.setPen(QPen(color.lighter(125), 2))
-        painter.drawPolygon(polygon)
+        if polygon.size() == 3:
+            painter.drawPolygon(polygon)
 
-        for v in triangle.vertices:
-            base = self._project(v[0], v[1], 0)
-            tip = self._project(v[0], v[1], v[2])
+        for v in finite_vertices:
+            base = self._safe_project(v[0], v[1], 0)
+            tip = self._safe_project(v[0], v[1], v[2])
+            if base is None or tip is None:
+                continue
             painter.setPen(QPen(QColor(180, 185, 205, 90), 1, Qt.PenStyle.DashLine))
             painter.drawLine(int(base[0]), int(base[1]), int(tip[0]), int(tip[1]))
 
         painter.setBrush(QBrush(color.lighter(125)))
         painter.setPen(QPen(QColor(245, 245, 245), 1))
         painter.setFont(QFont("Consolas", 8))
-        for k, v in enumerate(triangle.vertices):
-            sx, sy = self._project(v[0], v[1], v[2])
+        for k, v in enumerate(finite_vertices):
+            projected = self._safe_project(v[0], v[1], v[2])
+            if projected is None:
+                continue
+            sx, sy = projected
             painter.drawEllipse(int(sx - 5), int(sy - 5), 10, 10)
             if self.show_vertex_labels:
                 painter.setPen(QPen(color.lighter(140)))
                 painter.drawText(int(sx + 8), int(sy - 8), f"V{k}({v[0]:.0f},{v[1]:.0f},z={v[2]:.2f})")
                 painter.setPen(QPen(QColor(245, 245, 245), 1))
 
-        avg_sx = sum(p[0] for p in points) / 3
-        avg_sy = sum(p[1] for p in points) / 3
+        avg_sx = sum(p[0] for p in points) / len(points)
+        avg_sy = sum(p[1] for p in points) / len(points)
         painter.setFont(QFont("Arial", 11, QFont.Weight.Bold))
         painter.setPen(QPen(color.lighter(140)))
         painter.drawText(int(avg_sx + 12), int(avg_sy - 12), f"T{index}")
