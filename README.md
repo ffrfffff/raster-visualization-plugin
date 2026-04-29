@@ -103,7 +103,7 @@ python main.py
 - PB 生成规则独立维护在 `src/utils/pb_rules.py`，后续可继续扩展条件规则，例如根据控制变量决定某些 word 是否生成。
 - 状态块字段表按 `gpu_isp_pds_bif_pkg` 的 packed struct 展开：PDS、ISP、vertex varying/position format、point pitch 都逐字段列出。
 - 支持 24-bit `index_data_s`：`ix_index_0`、AB flag、reserved0、`ix_index_1`、BC flag、reserved1、`ix_index_2`、CA flag、BF flag 按结构体顺序打包。
-- v1 紧凑打包 state block、`point_pitch` / `index_data_s` 和 `original_position_coord`：`isp_state_word_fa/fb/ba/bb` 按 fa、fb、ba、bb 顺序写入；`this_is_point_primblk` 在独立 `pb_instruction` 随机块中生成，`pb_instruction` 表格同时输出 `primitive_block_instruction` 和 `primblk_cfg` 字段；为 1 时显示并写入 `point_pitch`、不显示 `index_data`，为 0 时显示并写入 `index_data`、不显示 `point_pitch`；顶点坐标紧跟当前 payload 后写入，不再保留 Doc1 模板中的中间 padding；每个顶点占 80 bit，X/Y 为 24-bit signed Q16.8，Z 为 32-bit FP32。
+- v1 紧凑打包 state block、`point_pitch` / `index_data_s` 和 `original_position_coord`：`isp_state_word_fa/fb/ba/bb` 按 fa、fb、ba、bb 顺序写入；`this_is_point_primblk` 在独立 `pb_instruction` 随机块中生成，`pb_instruction` 表格同时输出 `primitive_block_instruction` 和 `primblk_cfg` 字段；为 1 时显示并写入 `point_pitch`、不显示 `index_data`，为 0 时显示并写入 `index_data`、不显示 `point_pitch`；index mode 下每个 `index_data_s` 为 24 bit，全部写完后按 `align_up(index_data_start_bit + primitive_count * 24, 32)` 计算 `original_position_coord` 起点，因此 padding 随 primitive 数量自动变化，不是固定 16 bit；每个顶点占 80 bit，X/Y 为 24-bit signed Q16.8，Z 为 32-bit FP32。
 - 导入时优先使用 `index_data_s` 还原 primitive 与顶点索引关系；没有 index table 时才回退为每 3 个顶点组成一个三角形。
 - 支持通过 `File > Export PB Dump...` 从当前 GUI 三角形生成 Doc1-like dump，导出文件使用统一表格：`field / values / note` 三列，值为 `n'hxxx` 格式，子字段缩进显示，非 integral 行把 schema 名称显示在 field 列；最后写最终 `256'h...` memory dump。
 - 导出时 `pds_state_word0` 和 `pds_state_word1` 每次随机生成 32-bit 值，填充到字段表和最终 memory dump。
@@ -236,7 +236,7 @@ python main.py
 
 ### v1.4.6 (2026-04-29)
 - PB 导入后的 GUI 绘制会跳过非有限坐标/深度，并对超大视图坐标做安全裁剪，避免验证 dump 中出现 `nan`、异常 FP32 深度或超大坐标时导致 Qt 绘图参数溢出；解析表仍保留原始字段值。
-- index mode 下所有 `index_data_s` 解析/写入完成后，会把 `original_position_coord` 起点向后对齐到 32-bit 边界；例如当前样例中 24-bit `index_data_s` 数量导致需要跳过 16 bit padding，解析表显示为 `index_data_to_coord_alignment`，方便对照 memory bit layout。
+- index mode 下所有 `index_data_s` 解析/写入完成后，会把 `original_position_coord` 起点向后对齐到 32-bit 边界，公式为 `coord_start_bit = align_up(index_data_start_bit + primitive_count * 24, 32)`；padding 由 primitive 数量自动决定，例如当前样例中需要跳过 16 bit padding，解析表显示为 `index_data_to_coord_alignment`，方便对照 memory bit layout。
 - PB 导入解析现在复用导出侧紧凑布局规则，通过 `get_filtered_state_block_members()` 计算 state block 长度，GUI 导入时会先询问 primitive 数量和 vertex 数量，解析严格按输入数量确定 `index_data` 结束位置和读取的 `original_position_coord` 数量，不再用 `vf_vertex_total` 或 memory 长度反推数量；如果 `index_data` 引用超出已输入 vertex 数量的索引，解析表仍会输出，GUI 只跳过无法绘制的 primitive，保证隐藏 state word 不占 memory 空间且 `fa/fb/ba/bb` 顺序一致。
 - packed struct 子字段按 SystemVerilog 声明顺序从高 bit 到低 bit 拆分和拼接；`index_data_s` 按协议定义从最低位到最高位拆分为 `ix_index_0`、`ix_edge_flag_ab`、reserved、`ix_index_1` 等字段，确保解析表、导出表与 `randomized_3d_memory` 的父字段值一致。
 - PB 导出仍由 `pb_instruction` 中的 `this_is_point_primblk` 控制 `point_pitch` 与 `index_data` 互斥，导出时 `ispa_objtype` 与 `this_is_point_primblk` 保持一致。
