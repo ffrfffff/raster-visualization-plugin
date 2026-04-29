@@ -55,6 +55,8 @@ class DepthSideView(QWidget):
         if not self.config:
             return self._safe_view_coord(screen_x)
         width = self.width() - self.margin_left - self.margin_right
+        if self.config.screen_width <= 0:
+            return self._safe_view_coord(self.margin_left + self.offset_x)
         base = self.margin_left + (screen_x / self.config.screen_width) * width
         mapped = self.margin_left + (base - self.margin_left) * self.zoom + self.offset_x
         return self._safe_view_coord(mapped)

@@ -20,6 +20,7 @@ python main.py
 
 ### 配置参数面板
 - **MSAA**: 支持 1x / 2x / 4x / 8x / 16x，采样点使用标准旋转网格（Rotated Grid）模式。
+- **Config Number Base**: 控制 Screen Size、Depth Surface Size、Render Target Size、Clip Region、Scissor、Tile Size 这六组数值输入的显示/输入进制，可在 Binary / Decimal / Hexadecimal 间切换；所有值统一按十进制数值存入配置，范围为 `0` 到 `64K`（`0b1_0000_0000_0000_0000` / `0x10000` / `65536`）。
 - **Screen Size**: 配置屏幕空间宽高，是 Top View / 3D View 中 screen 平面的基础范围。
 - **Depth Surface Size**: 配置 depth surface 宽高，可通过 `Depth Surf` 开关在 Top View / 3D View / Popout 中显示边界。
 - **Render Target Size**: 配置 render target 宽高，可通过 `RT Surf` 开关在 Top View / 3D View / Popout 中显示边界。
@@ -233,6 +234,9 @@ python main.py
 ```
 
 ## 版本日志
+
+### v1.4.7 (2026-04-29)
+- 配置面板新增 `Config Number Base`，Screen Size、Depth Surface Size、Render Target Size、Clip Region、Scissor、Tile Size 六组输入可在 Binary / Decimal / Hexadecimal 间切换；输入范围统一扩展为 `0..64K`，二进制、十进制、十六进制会自动换算并保留同一个内部数值。
 
 ### v1.4.6 (2026-04-29)
 - PB 导入后的 GUI 绘制会跳过非有限坐标/深度，并对超大视图坐标做安全裁剪，避免验证 dump 中出现 `nan`、异常 FP32 深度或超大坐标时导致 Qt 绘图参数溢出；解析表仍保留原始字段值。

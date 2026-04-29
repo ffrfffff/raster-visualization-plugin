@@ -130,7 +130,7 @@ class View3D(QWidget):
         if not self.config:
             return (x, y, z)
 
-        max_dim = max(self.config.screen_width, self.config.screen_height)
+        max_dim = max(1, self.config.screen_width, self.config.screen_height)
         nx = ((x - self.config.screen_width / 2) / max_dim) * 2
         ny = ((self.config.screen_height / 2 - y) / max_dim) * 2
         nz = z * 0.75
@@ -230,7 +230,7 @@ class View3D(QWidget):
         cy = self.height() / 2 + self.pan_y
         nx = (vx - cx) / scale
         ny = (cy - vy) / scale
-        max_dim = max(self.config.screen_width, self.config.screen_height)
+        max_dim = max(1, self.config.screen_width, self.config.screen_height)
         sx = self.config.screen_width / 2 + (nx * max_dim / 2)
         sy = self.config.screen_height / 2 - (ny * max_dim / 2)
         return (sx, sy)
@@ -364,6 +364,8 @@ class View3D(QWidget):
             self._draw_projected_line(painter, (0, y, 0), (sw, y, 0))
 
     def _draw_tile_labels(self, painter: QPainter):
+        if self.config.tile_width <= 0 or self.config.tile_height <= 0:
+            return
         pixel_size = self._projected_pixel_size()
         if pixel_size * min(self.config.tile_width, self.config.tile_height) < 12:
             return
@@ -381,6 +383,8 @@ class View3D(QWidget):
                 painter.drawText(int(sx - fm.horizontalAdvance(label) / 2), int(sy + fm.height() / 3), label)
 
     def _draw_tile_pixel_axes(self, painter: QPainter):
+        if self.config.tile_width <= 0 or self.config.tile_height <= 0:
+            return
         pixel_size = self._projected_pixel_size()
         if pixel_size * min(self.config.tile_width, self.config.tile_height) < 10:
             return
@@ -684,7 +688,7 @@ class View3D(QWidget):
         if not screen_pos or not self.config:
             return
         sx, sy = screen_pos
-        if 0 <= sx < self.config.screen_width and 0 <= sy < self.config.screen_height:
+        if self.config.tile_width > 0 and self.config.tile_height > 0 and 0 <= sx < self.config.screen_width and 0 <= sy < self.config.screen_height:
             tile_x = int(sx) // self.config.tile_width
             tile_y = int(sy) // self.config.tile_height
             if select:

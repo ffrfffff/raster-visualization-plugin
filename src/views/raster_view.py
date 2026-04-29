@@ -163,7 +163,7 @@ class RasterView(QWidget):
                 painter.drawImage(target_rect, draw_img)
 
         # ---- Tile 网格 ----
-        if self.show_tiles:
+        if self.show_tiles and self.config.tile_width > 0 and self.config.tile_height > 0:
             tw = self.config.tile_width
             th = self.config.tile_height
 
@@ -452,7 +452,7 @@ class RasterView(QWidget):
             self.setCursor(Qt.CursorShape.ClosedHandCursor)
         elif event.button() == Qt.MouseButton.LeftButton:
             sx, sy = self._view_to_screen(event.pos().x(), event.pos().y())
-            if self.config and 0 <= sx < self.config.screen_width and 0 <= sy < self.config.screen_height:
+            if self.config and self.config.tile_width > 0 and self.config.tile_height > 0 and 0 <= sx < self.config.screen_width and 0 <= sy < self.config.screen_height:
                 tile_x = int(sx) // self.config.tile_width
                 tile_y = int(sy) // self.config.tile_height
                 self.selected_msaa_pixel = (int(sx), int(sy))
@@ -473,7 +473,7 @@ class RasterView(QWidget):
             self.update()
         else:
             sx, sy = self._view_to_screen(event.pos().x(), event.pos().y())
-            if self.config and 0 <= sx < self.config.screen_width and 0 <= sy < self.config.screen_height:
+            if self.config and self.config.tile_width > 0 and self.config.tile_height > 0 and 0 <= sx < self.config.screen_width and 0 <= sy < self.config.screen_height:
                 tile_x = int(sx) // self.config.tile_width
                 tile_y = int(sy) // self.config.tile_height
                 QToolTip.showText(
@@ -487,7 +487,7 @@ class RasterView(QWidget):
             self.setCursor(Qt.CursorShape.ArrowCursor)
 
     def fit_to_view(self):
-        if self.config:
+        if self.config and self.config.screen_width > 0 and self.config.screen_height > 0:
             margin = 30
             self.zoom = min((self.width() - 2 * margin) / self.config.screen_width,
                             (self.height() - 2 * margin) / self.config.screen_height)

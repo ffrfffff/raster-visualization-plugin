@@ -3,7 +3,60 @@ from PyQt6.QtWidgets import (
     QSpinBox, QComboBox, QLabel, QPushButton
 )
 from PyQt6.QtCore import pyqtSignal
+from PyQt6.QtGui import QValidator
 from ..models.config import RasterConfigModel
+
+
+CONFIG_VALUE_MIN = 0
+CONFIG_VALUE_MAX = 64 * 1024
+
+
+class RadixSpinBox(QSpinBox):
+    def __init__(self):
+        super().__init__()
+        self._radix = 10
+        self.setRange(CONFIG_VALUE_MIN, CONFIG_VALUE_MAX)
+        self.setMinimumWidth(95)
+
+    def set_radix(self, radix: int):
+        self._radix = radix
+        self.lineEdit().setText(self.textFromValue(self.value()))
+
+    def textFromValue(self, value: int) -> str:
+        if self._radix == 2:
+            return f"0b{value:b}"
+        if self._radix == 16:
+            return f"0x{value:X}"
+        return str(value)
+
+    def valueFromText(self, text: str) -> int:
+        try:
+            value = self._parse_text(text)
+        except ValueError:
+            return self.minimum()
+        return max(self.minimum(), min(self.maximum(), value))
+
+    def validate(self, text: str, pos: int):
+        del pos
+        stripped = text.strip().replace("_", "")
+        if stripped in {"", "0b", "0B", "0x", "0X"}:
+            return (QValidator.State.Intermediate, text, len(text))
+        try:
+            value = self._parse_text(text)
+        except ValueError:
+            return (QValidator.State.Invalid, text, len(text))
+        if self.minimum() <= value <= self.maximum():
+            return (QValidator.State.Acceptable, text, len(text))
+        return (QValidator.State.Invalid, text, len(text))
+
+    def _parse_text(self, text: str) -> int:
+        stripped = text.strip().replace("_", "")
+        lowered = stripped.lower()
+        if lowered.startswith("0b"):
+            return int(stripped[2:], 2)
+        if lowered.startswith("0x"):
+            return int(stripped[2:], 16)
+        return int(stripped, self._radix)
 
 
 class ConfigPanel(QWidget):
@@ -14,6 +67,7 @@ class ConfigPanel(QWidget):
     def __init__(self, config_model: RasterConfigModel):
         super().__init__()
         self.config_model = config_model
+        self.config_spinboxes = []
         self._init_ui()
         self._connect_signals()
 
@@ -31,15 +85,20 @@ class ConfigPanel(QWidget):
         msaa_layout.addWidget(self.msaa_combo)
         layout.addWidget(msaa_group)
 
+        base_group = QGroupBox("Config Number Base")
+        base_layout = QHBoxLayout(base_group)
+        self.base_combo = QComboBox()
+        self.base_combo.addItems(["Binary", "Decimal", "Hexadecimal"])
+        self.base_combo.setCurrentIndex(1)
+        base_layout.addWidget(QLabel("Base:"))
+        base_layout.addWidget(self.base_combo)
+        layout.addWidget(base_group)
+
         # Screen Size
         screen_group = QGroupBox("Screen Size")
         screen_layout = QHBoxLayout(screen_group)
-        self.screen_width_spin = QSpinBox()
-        self.screen_width_spin.setRange(1, 4096)
-        self.screen_width_spin.setValue(800)
-        self.screen_height_spin = QSpinBox()
-        self.screen_height_spin.setRange(1, 4096)
-        self.screen_height_spin.setValue(600)
+        self.screen_width_spin = self._create_config_spinbox(800)
+        self.screen_height_spin = self._create_config_spinbox(600)
         screen_layout.addWidget(QLabel("W:"))
         screen_layout.addWidget(self.screen_width_spin)
         screen_layout.addWidget(QLabel("H:"))
@@ -49,12 +108,8 @@ class ConfigPanel(QWidget):
         # Depth Surface Size
         depth_group = QGroupBox("Depth Surface Size")
         depth_layout = QHBoxLayout(depth_group)
-        self.depth_width_spin = QSpinBox()
-        self.depth_width_spin.setRange(1, 4096)
-        self.depth_width_spin.setValue(800)
-        self.depth_height_spin = QSpinBox()
-        self.depth_height_spin.setRange(1, 4096)
-        self.depth_height_spin.setValue(600)
+        self.depth_width_spin = self._create_config_spinbox(800)
+        self.depth_height_spin = self._create_config_spinbox(600)
         depth_layout.addWidget(QLabel("W:"))
         depth_layout.addWidget(self.depth_width_spin)
         depth_layout.addWidget(QLabel("H:"))
@@ -64,12 +119,8 @@ class ConfigPanel(QWidget):
         # RT Size
         rt_group = QGroupBox("Render Target Size")
         rt_layout = QHBoxLayout(rt_group)
-        self.rt_width_spin = QSpinBox()
-        self.rt_width_spin.setRange(1, 4096)
-        self.rt_width_spin.setValue(800)
-        self.rt_height_spin = QSpinBox()
-        self.rt_height_spin.setRange(1, 4096)
-        self.rt_height_spin.setValue(600)
+        self.rt_width_spin = self._create_config_spinbox(800)
+        self.rt_height_spin = self._create_config_spinbox(600)
         rt_layout.addWidget(QLabel("W:"))
         rt_layout.addWidget(self.rt_width_spin)
         rt_layout.addWidget(QLabel("H:"))
@@ -80,23 +131,15 @@ class ConfigPanel(QWidget):
         clip_group = QGroupBox("Clip Region")
         clip_layout = QVBoxLayout(clip_group)
         clip_row1 = QHBoxLayout()
-        self.clip_x_spin = QSpinBox()
-        self.clip_x_spin.setRange(0, 4096)
-        self.clip_x_spin.setValue(0)
-        self.clip_y_spin = QSpinBox()
-        self.clip_y_spin.setRange(0, 4096)
-        self.clip_y_spin.setValue(0)
+        self.clip_x_spin = self._create_config_spinbox(0)
+        self.clip_y_spin = self._create_config_spinbox(0)
         clip_row1.addWidget(QLabel("X:"))
         clip_row1.addWidget(self.clip_x_spin)
         clip_row1.addWidget(QLabel("Y:"))
         clip_row1.addWidget(self.clip_y_spin)
         clip_row2 = QHBoxLayout()
-        self.clip_w_spin = QSpinBox()
-        self.clip_w_spin.setRange(1, 4096)
-        self.clip_w_spin.setValue(800)
-        self.clip_h_spin = QSpinBox()
-        self.clip_h_spin.setRange(1, 4096)
-        self.clip_h_spin.setValue(600)
+        self.clip_w_spin = self._create_config_spinbox(800)
+        self.clip_h_spin = self._create_config_spinbox(600)
         clip_row2.addWidget(QLabel("W:"))
         clip_row2.addWidget(self.clip_w_spin)
         clip_row2.addWidget(QLabel("H:"))
@@ -109,23 +152,15 @@ class ConfigPanel(QWidget):
         scissor_group = QGroupBox("Scissor")
         scissor_layout = QVBoxLayout(scissor_group)
         scissor_row1 = QHBoxLayout()
-        self.scissor_x_spin = QSpinBox()
-        self.scissor_x_spin.setRange(0, 4096)
-        self.scissor_x_spin.setValue(0)
-        self.scissor_y_spin = QSpinBox()
-        self.scissor_y_spin.setRange(0, 4096)
-        self.scissor_y_spin.setValue(0)
+        self.scissor_x_spin = self._create_config_spinbox(0)
+        self.scissor_y_spin = self._create_config_spinbox(0)
         scissor_row1.addWidget(QLabel("X:"))
         scissor_row1.addWidget(self.scissor_x_spin)
         scissor_row1.addWidget(QLabel("Y:"))
         scissor_row1.addWidget(self.scissor_y_spin)
         scissor_row2 = QHBoxLayout()
-        self.scissor_w_spin = QSpinBox()
-        self.scissor_w_spin.setRange(1, 4096)
-        self.scissor_w_spin.setValue(800)
-        self.scissor_h_spin = QSpinBox()
-        self.scissor_h_spin.setRange(1, 4096)
-        self.scissor_h_spin.setValue(600)
+        self.scissor_w_spin = self._create_config_spinbox(800)
+        self.scissor_h_spin = self._create_config_spinbox(600)
         scissor_row2.addWidget(QLabel("W:"))
         scissor_row2.addWidget(self.scissor_w_spin)
         scissor_row2.addWidget(QLabel("H:"))
@@ -137,12 +172,8 @@ class ConfigPanel(QWidget):
         # Tile Size
         tile_group = QGroupBox("Tile Size")
         tile_layout = QHBoxLayout(tile_group)
-        self.tile_width_spin = QSpinBox()
-        self.tile_width_spin.setRange(1, 256)
-        self.tile_width_spin.setValue(16)
-        self.tile_height_spin = QSpinBox()
-        self.tile_height_spin.setRange(1, 256)
-        self.tile_height_spin.setValue(16)
+        self.tile_width_spin = self._create_config_spinbox(16)
+        self.tile_height_spin = self._create_config_spinbox(16)
         tile_layout.addWidget(QLabel("W:"))
         tile_layout.addWidget(self.tile_width_spin)
         tile_layout.addWidget(QLabel("H:"))
@@ -155,10 +186,23 @@ class ConfigPanel(QWidget):
 
         layout.addStretch()
 
-        self.setMaximumWidth(250)
+        self.setMaximumWidth(300)
+
+    def _create_config_spinbox(self, value: int) -> RadixSpinBox:
+        spinbox = RadixSpinBox()
+        spinbox.setValue(value)
+        self.config_spinboxes.append(spinbox)
+        return spinbox
 
     def _connect_signals(self):
         self.apply_btn.clicked.connect(self._apply_config)
+        self.base_combo.currentIndexChanged.connect(self._update_numeric_base)
+
+    def _update_numeric_base(self):
+        bases = [2, 10, 16]
+        radix = bases[self.base_combo.currentIndex()]
+        for spinbox in self.config_spinboxes:
+            spinbox.set_radix(radix)
 
     def _apply_config(self):
         msaa_values = [1, 2, 4, 8, 16]

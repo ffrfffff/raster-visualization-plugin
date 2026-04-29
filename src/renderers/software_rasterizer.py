@@ -103,6 +103,8 @@ class SoftwareRasterizer:
         tile_coverage: Dict[Tuple[int, int], Set[int]] = {}
 
         for idx, result in enumerate(rasterized_triangles):
+            if self.config.tile_width <= 0 or self.config.tile_height <= 0:
+                continue
             for px, py in result.covered_pixels:
                 tile_x = px // self.config.tile_width
                 tile_y = py // self.config.tile_height

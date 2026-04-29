@@ -20,10 +20,14 @@ class RasterConfig:
 
     @property
     def tile_count_x(self) -> int:
+        if self.tile_width <= 0:
+            return 0
         return (self.screen_width + self.tile_width - 1) // self.tile_width
 
     @property
     def tile_count_y(self) -> int:
+        if self.tile_height <= 0:
+            return 0
         return (self.screen_height + self.tile_height - 1) // self.tile_height
 
     @property
