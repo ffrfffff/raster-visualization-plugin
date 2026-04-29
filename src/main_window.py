@@ -510,8 +510,8 @@ class MainWindow(QMainWindow):
             "Primitive Count",
             "Enter primitive count for this PB dump:",
             1,
-            1,
-            21,
+            0,
+            2147483647,
             1,
         )
         if not ok:
@@ -521,9 +521,9 @@ class MainWindow(QMainWindow):
             self,
             "Vertex Count",
             "Enter vertex count for this PB dump:",
-            primitive_count * 3,
-            3,
-            63,
+            max(primitive_count * 3, 1),
+            1,
+            2147483647,
             1,
         )
         if not ok:

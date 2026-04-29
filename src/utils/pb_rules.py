@@ -154,6 +154,12 @@ for _schema_name, _fields in STRUCT_SCHEMAS.items():
         _offset -= _field.width
         STRUCT_FIELD_OFFSETS[_schema_name][_field.name] = _offset
 
+INDEX_DATA_FIELD_OFFSETS: Dict[str, int] = {}
+_offset = 0
+for _field in STRUCT_SCHEMAS["index_data_s"]:
+    INDEX_DATA_FIELD_OFFSETS[_field.name] = _offset
+    _offset += _field.width
+
 STATE_BLOCK_MEMBER_OFFSETS: Dict[str, int] = {}
 _offset = 0
 for _member in FULL_STATE_BLOCK_MEMBERS:
@@ -181,6 +187,13 @@ def fields_with_offsets(fields: Iterable[FieldSpec]) -> Iterable[tuple[FieldSpec
     for field in field_list:
         offset -= field.width
         yield field, offset
+
+
+def index_data_fields_with_offsets() -> Iterable[tuple[FieldSpec, int]]:
+    offset = 0
+    for field in STRUCT_SCHEMAS["index_data_s"]:
+        yield field, offset
+        offset += field.width
 
 
 def state_members_with_offsets(members: Iterable[StateBlockMember] = FULL_STATE_BLOCK_MEMBERS) -> Iterable[tuple[StateBlockMember, int]]:
@@ -370,7 +383,7 @@ def enforce_bf_flag_zero(words: Dict[int, int], primitive_count: int, index_data
     
     if isp_twosided == 0:
         from .pb_io import _read_bits_with_default, _write_bits
-        bf_flag_offset = STRUCT_FIELD_OFFSETS["index_data_s"]["ix_bf_flag"]
+        bf_flag_offset = INDEX_DATA_FIELD_OFFSETS["ix_bf_flag"]
         bf_flag_mask = 1 << bf_flag_offset
         for prim_index in range(primitive_count):
             prim_offset = index_data_start_bit + prim_index * INDEX_DATA_BITS

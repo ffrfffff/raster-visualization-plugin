@@ -9,12 +9,14 @@ from ..models.config import RasterConfig
 from ..models.triangle import Triangle
 from .pb_rules import (
     INDEX_DATA_BITS,
+    INDEX_DATA_FIELD_OFFSETS,
     STRUCT_FIELD_OFFSETS,
     STRUCT_SCHEMAS,
     STRUCT_WIDTHS,
     enforce_bf_flag_zero,
     fields_with_offsets,
     get_filtered_state_block_members,
+    index_data_fields_with_offsets,
     state_members_with_offsets,
 )
 
@@ -69,10 +71,14 @@ def load_pb_dump(
     except OSError as exc:
         raise ValueError(f"Failed to read PB dump: {exc}") from exc
 
-    if primitive_count is not None and primitive_count < 1:
-        raise ValueError("primitive_count must be at least 1")
-    if vertex_count is not None and vertex_count < 3:
-        raise ValueError("vertex_count must be at least 3")
+    if primitive_count is None:
+        raise ValueError("primitive_count is required for PB dump import")
+    if vertex_count is None:
+        raise ValueError("vertex_count is required for PB dump import")
+    if primitive_count < 0:
+        raise ValueError("primitive_count must not be negative")
+    if vertex_count < 1:
+        raise ValueError("vertex_count must be at least 1")
 
     point_mode = _infer_point_mode_from_ispa_objtype_text(text)
     coords = _parse_position_coord_literals(text)
@@ -88,16 +94,12 @@ def load_pb_dump(
         if not coords:
             coords = _extract_position_coords_from_words(words, point_mode, primitive_count, vertex_count)
         if point_mode == 0 and not index_data:
-            if primitive_count is None:
-                primitive_count = len(coords) // 3
             index_data = _extract_index_data_from_words(words, primitive_count)
 
     if len(coords) < 3:
         raise ValueError("PB dump must contain at least 3 vertex position coords")
 
     triangles = _build_triangles(coords, index_data)
-    if not triangles:
-        raise ValueError("PB dump does not contain any complete triangle primitives")
 
     if output_path is not None:
         if words is None:
@@ -504,7 +506,7 @@ def _format_unified_table(
         rows.append("index_data")
         for primitive_index, raw in enumerate(index_words):
             rows.append(_table_row(f"p[{primitive_index}]", "integral", INDEX_DATA_BITS, raw, "", indent=1))
-            rows.extend(_format_struct_field_rows("index_data_s", raw, indent=2))
+            rows.extend(_format_index_data_field_rows(raw, indent=2))
     
     # Position coord section with original_position_coord title (no value display)
     rows.append("original_position_coord")
@@ -525,6 +527,23 @@ def _format_unified_table(
 def _format_struct_field_rows(schema_name: str, raw: int, indent: int = 1) -> List[str]:
     rows = []
     for field, offset in fields_with_offsets(STRUCT_SCHEMAS[schema_name]):
+        field_raw = _extract_bits(raw, offset, field.width)
+        rows.append(
+            _table_row(
+                field.name,
+                "integral",
+                field.width,
+                field_raw,
+                "",
+                indent=indent,
+            )
+        )
+    return rows
+
+
+def _format_index_data_field_rows(raw: int, indent: int = 1) -> List[str]:
+    rows = []
+    for field, offset in index_data_fields_with_offsets():
         field_raw = _extract_bits(raw, offset, field.width)
         rows.append(
             _table_row(
@@ -687,23 +706,6 @@ def _resolve_point_mode(words: Dict[int, int], point_mode: Optional[int]) -> int
 
 
 def _infer_point_mode_from_layout(words: Dict[int, int]) -> int:
-    candidates = []
-    for point_mode in (0, 1):
-        try:
-            coords = _extract_position_coords_from_words(words, point_mode)
-            index_words = []
-            if point_mode == 0:
-                index_words = _extract_index_data_from_words(words, len(coords) // 3)
-                _build_triangles(coords, index_words)
-            else:
-                _build_triangles(coords, [])
-        except ValueError:
-            continue
-        candidates.append((point_mode, len(coords), len(index_words)))
-
-    if candidates:
-        candidates.sort(key=lambda item: (item[1] % 3 == 0, item[1], item[2]), reverse=True)
-        return candidates[0][0]
     return _has_point_pitch(words)
 
 
@@ -722,28 +724,18 @@ def _extract_position_coords_from_words(
     if this_is_point_primblk is None:
         return _extract_position_coords_from_words(words, _infer_point_mode_from_layout(words), primitive_count, vertex_count)
 
-    explicit_count = _extract_vertex_total(words)
     index_data_start_bit = _index_data_start_bit(words)
     point_mode = this_is_point_primblk
     if point_mode:
         emitted_primitive_count = 0
-    elif primitive_count is not None:
-        emitted_primitive_count = primitive_count
     else:
-        emitted_primitive_count = _primitive_count_from_words(words, index_data_start_bit)
-        if explicit_count and explicit_count % 3 == 0:
-            emitted_primitive_count = min(emitted_primitive_count, explicit_count // 3)
+        emitted_primitive_count = primitive_count
     index_words = [] if point_mode else [0] * emitted_primitive_count
     coord_start_bit = _coord_start_bit(index_data_start_bit, index_words, point_mode)
-    available_count = _available_position_coord_count(words, coord_start_bit)
-    if vertex_count is not None:
-        if vertex_count > available_count:
-            raise ValueError("PB dump does not contain enough original_position_coord data for the provided vertex count")
-        count = vertex_count
-    elif explicit_count and explicit_count <= available_count and (point_mode or explicit_count % 3 == 0):
-        count = explicit_count
-    else:
-        count = available_count
+    available_count = _available_position_coord_count(words, coord_start_bit, vertex_count)
+    if vertex_count > available_count:
+        raise ValueError("PB dump does not contain enough original_position_coord data for the provided vertex count")
+    count = vertex_count
 
     if count <= 0:
         raise ValueError("PB dump does not contain complete original_position_coord data for the resolved PB layout")
@@ -764,9 +756,9 @@ def _extract_index_data_from_words(words: Dict[int, int], primitive_count: int) 
     return index_words
 
 
-def _available_position_coord_count(words: Dict[int, int], coord_start_bit: int) -> int:
+def _available_position_coord_count(words: Dict[int, int], coord_start_bit: int, max_count: int) -> int:
     count = 0
-    while count < MAX_VERTEX_COUNT:
+    while count < max_count:
         start = coord_start_bit + count * COORD_BITS
         end = start + COORD_BITS - 1
         needed_words = range(start // 256, end // 256 + 1)
@@ -776,26 +768,6 @@ def _available_position_coord_count(words: Dict[int, int], coord_start_bit: int)
     return count
 
 
-def _primitive_count_from_words(words: Dict[int, int], index_data_start_bit: int) -> int:
-    max_bit = (max(words) + 1) * 256 if words else index_data_start_bit
-    remaining_bits = max(0, max_bit - index_data_start_bit)
-    return min(MAX_VERTEX_COUNT // 3, remaining_bits // (INDEX_DATA_BITS + 3 * COORD_BITS))
-
-
-def _extract_vertex_total(words: Dict[int, int]) -> int:
-    try:
-        offset = 0
-        for member in get_filtered_state_block_members(words):
-            if member.name == "vertex_position_comp_format_word_one":
-                field_offset = STRUCT_FIELD_OFFSETS["vertex_position_comp_format_word_one_s"]["vf_vertex_total"]
-                encoded_total = _read_bits(words, offset + field_offset, 6)
-                return encoded_total + 1 if encoded_total else 0
-            offset += STRUCT_WIDTHS[member.schema_name]
-    except ValueError:
-        return 0
-    return 0
-
-
 def _build_triangles(coords: List[Tuple[float, float, float]], index_data: List[int]) -> List[Triangle]:
     if index_data:
         triangles = []
@@ -803,7 +775,7 @@ def _build_triangles(coords: List[Tuple[float, float, float]], index_data: List[
             fields = _unpack_index_data(raw)
             indices = [fields["ix_index_0"], fields["ix_index_1"], fields["ix_index_2"]]
             if any(index >= len(coords) for index in indices):
-                raise ValueError(f"index_data[{primitive_index}] references a vertex outside original_position_coord")
+                continue
             vertices = [coords[index] for index in indices]
             triangles.append(Triangle(vertices=vertices, color=DEFAULT_COLORS[primitive_index % len(DEFAULT_COLORS)]))
         return triangles
@@ -896,7 +868,7 @@ def _pack_index_data(
     for value in (index0, index1, index2):
         if value < 0 or value >= (1 << 6):
             raise ValueError(f"Index value {value} does not fit in 6 bits")
-    offsets = STRUCT_FIELD_OFFSETS["index_data_s"]
+    offsets = INDEX_DATA_FIELD_OFFSETS
     return (
         (index0 << offsets["ix_index_0"])
         | ((edge_ab & 0x1) << offsets["ix_edge_flag_ab"])
@@ -909,7 +881,10 @@ def _pack_index_data(
 
 
 def _unpack_index_data(raw: int) -> Dict[str, int]:
-    return _unpack_struct("index_data_s", raw)
+    return {
+        field.name: _extract_bits(raw, offset, field.width)
+        for field, offset in index_data_fields_with_offsets()
+    }
 
 
 def _unpack_struct(schema_name: str, raw: int) -> Dict[str, int]:
