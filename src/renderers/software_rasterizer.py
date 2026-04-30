@@ -129,7 +129,7 @@ class SoftwareRasterizer:
         """MSAA Resolve: 将多个三角形的结果合并到最终像素颜色
 
         模拟深度测试 + coverage merge:
-        - 每个 sample 保留深度最小的三角形颜色
+        - 每个 sample 保留深度最大的三角形颜色
         - Resolve 时按 coverage 比例混合
         """
         # 每个 sample 的最终颜色 (triangle_index, depth)
@@ -144,7 +144,7 @@ class SoftwareRasterizer:
 
                 for sample_idx, depth in sample_depths.items():
                     key = (px, py, sample_idx)
-                    if key not in sample_results or depth < sample_results[key][1]:
+                    if key not in sample_results or depth > sample_results[key][1]:
                         sample_results[key] = (tri_idx, depth)
 
         # Resolve

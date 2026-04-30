@@ -84,6 +84,7 @@ class RasterView(QWidget):
         img = QImage(sw, sh, QImage.Format.Format_ARGB32_Premultiplied)
         img.fill(QColor(0, 0, 0, 0))
 
+        best_pixels = {}
         for result in self.rasterized_results:
             color = result.triangle.color
             for (px, py), ratio in result.coverage_ratio.items():
@@ -91,9 +92,15 @@ class RasterView(QWidget):
                 local_y = py - so
                 if not (0 <= local_x < sw and 0 <= local_y < sh):
                     continue
-                alpha = int(200 * ratio)
-                c = QColor(color[0], color[1], color[2], alpha)
-                img.setPixelColor(local_x, local_y, c)
+                depth = result.pixel_center_depth.get((px, py))
+                if depth is None:
+                    continue
+                key = (local_x, local_y)
+                if key not in best_pixels or depth > best_pixels[key][0]:
+                    best_pixels[key] = (depth, color, int(200 * ratio))
+
+        for (local_x, local_y), (_, color, alpha) in best_pixels.items():
+            img.setPixelColor(local_x, local_y, QColor(color[0], color[1], color[2], alpha))
 
         self._pixel_image = img
 
@@ -317,8 +324,14 @@ class RasterView(QWidget):
             painter.setPen(QPen(QColor(0, 255, 200)))
             painter.drawText(int(ox + sx * scale + 3), int(oy + sy * scale + 12), f"Scissor({sx},{sy},{s_width},{s_height})")
 
-        # ---- 三角形边框 + 顶点 ----
-        for tri_idx, triangle in enumerate(self.triangles):
+        ordered_triangles = sorted(
+            enumerate(self.triangles),
+            key=lambda item: sum(
+                v[2] if all(math.isfinite(value) for value in v) else 0.0
+                for v in item[1].vertices
+            ) / 3,
+        )
+        for tri_idx, triangle in ordered_triangles:
             color = QColor(triangle.color[0], triangle.color[1], triangle.color[2])
             painter.setPen(QPen(color, 2))
             painter.setBrush(Qt.BrushStyle.NoBrush)
@@ -389,7 +402,7 @@ class RasterView(QWidget):
         best_depths = {}
         for result in self.rasterized_results:
             for sample_idx, depth in result.sample_depths.get((px, py), {}).items():
-                if sample_idx not in best_depths or depth < best_depths[sample_idx]:
+                if sample_idx not in best_depths or depth > best_depths[sample_idx]:
                     best_depths[sample_idx] = depth
                     mask |= (1 << sample_idx)
         return mask

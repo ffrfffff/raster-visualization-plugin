@@ -238,6 +238,10 @@ python main.py
 
 ## 版本日志
 
+### v1.4.10 (2026-04-30)
+- 俯视图重叠三角形改为按 Z 深度决定上下层：非 MSAA 像素缓存、MSAA resolve 和选中像素的 sample mask 都优先保留 Z 更大的三角形。
+- Top View 的三角形边框/顶点按平均 Z 从低到高绘制，Z 更大的三角形后绘制并显示在上层；3D View 顶视缓存和非平面像素绘制也同步使用最大 Z 选择。
+
 ### v1.4.9 (2026-04-29)
 - 配置面板新增 `Screen Offset`，与其它数值配置共用 Binary / Decimal / Hexadecimal 输入和 `0..64K` 范围；默认模式下 X/Y 共用一个 offset，screen 实际起点向右/向下移动到 `(offset, offset)`。
 - `Screen Offset` 新增 `Subtract from coordinates` 开关；开启后 screen 仍从 `(0,0)` 开始，但三角形 X/Y 在光栅化、Top View 和 3D View 绘制前统一减去 offset，便于把带全局偏移的坐标映射回屏幕内。

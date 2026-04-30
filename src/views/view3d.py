@@ -113,13 +113,23 @@ class View3D(QWidget):
         img = QImage(sw, sh, QImage.Format.Format_ARGB32_Premultiplied)
         img.fill(QColor(0, 0, 0, 0))
 
+        best_pixels = {}
         for result in self.rasterized_results:
             color = result.triangle.color
             for (px, py), ratio in result.coverage_ratio.items():
                 local_x = px - so
                 local_y = py - so
-                if 0 <= local_x < sw and 0 <= local_y < sh:
-                    img.setPixelColor(local_x, local_y, QColor(color[0], color[1], color[2], int(210 * ratio)))
+                if not (0 <= local_x < sw and 0 <= local_y < sh):
+                    continue
+                depth = result.pixel_center_depth.get((px, py))
+                if depth is None:
+                    continue
+                key = (local_x, local_y)
+                if key not in best_pixels or depth > best_pixels[key][0]:
+                    best_pixels[key] = (depth, color, int(210 * ratio))
+
+        for (local_x, local_y), (_, color, alpha) in best_pixels.items():
+            img.setPixelColor(local_x, local_y, QColor(color[0], color[1], color[2], alpha))
         self._pixel_image = img
 
         if self.config.msaa > 1 and self.rasterizer:
@@ -340,29 +350,36 @@ class View3D(QWidget):
         counter = 0
 
         if self.config.msaa > 1 and self.rasterizer:
-            resolved = self.rasterizer.resolve_msaa(self.rasterized_results)
-            for (px, py), (r, g, b) in resolved.items():
+            painter.setPen(Qt.PenStyle.NoPen)
+            for (px, py), (r, g, b) in self.rasterizer.resolve_msaa(self.rasterized_results).items():
                 if not (min_x <= px < max_x and min_y <= py < max_y):
                     continue
                 counter += 1
                 if counter % step != 0:
                     continue
                 painter.setBrush(QBrush(QColor(r, g, b, 205)))
-                painter.setPen(Qt.PenStyle.NoPen)
                 self._draw_projected_rect(painter, px, py, 1, 1, 0)
             return
 
+        best_pixels = {}
         for result in self.rasterized_results:
             color = result.triangle.color
             for (px, py), ratio in result.coverage_ratio.items():
                 if not (min_x <= px < max_x and min_y <= py < max_y):
                     continue
-                counter += 1
-                if counter % step != 0:
+                depth = result.pixel_center_depth.get((px, py))
+                if depth is None:
                     continue
-                painter.setBrush(QBrush(QColor(color[0], color[1], color[2], int(210 * ratio))))
-                painter.setPen(Qt.PenStyle.NoPen)
-                self._draw_projected_rect(painter, px, py, 1, 1, 0)
+                if (px, py) not in best_pixels or depth > best_pixels[(px, py)][0]:
+                    best_pixels[(px, py)] = (depth, color, int(210 * ratio))
+
+        painter.setPen(Qt.PenStyle.NoPen)
+        for (px, py), (_, color, alpha) in best_pixels.items():
+            counter += 1
+            if counter % step != 0:
+                continue
+            painter.setBrush(QBrush(QColor(color[0], color[1], color[2], alpha)))
+            self._draw_projected_rect(painter, px, py, 1, 1, 0)
 
     def _draw_tile_grid(self, painter: QPainter):
         sw = self.config.screen_width
@@ -612,7 +629,7 @@ class View3D(QWidget):
         best_depths = {}
         for result in self.rasterized_results:
             for sample_idx, depth in result.sample_depths.get((px, py), {}).items():
-                if sample_idx not in best_depths or depth < best_depths[sample_idx]:
+                if sample_idx not in best_depths or depth > best_depths[sample_idx]:
                     best_depths[sample_idx] = depth
                     mask |= (1 << sample_idx)
         return mask
