@@ -20,8 +20,8 @@ python main.py
 
 ### 配置参数面板
 - **MSAA**: 支持 1x / 2x / 4x / 8x / 16x，采样点使用标准旋转网格（Rotated Grid）模式。
-- **Config Number Base**: 控制 Screen Size、Screen Offset、Depth Surface Size、Render Target Size、Clip Region、Scissor、Tile Size 这七组数值输入的显示/输入进制，可在 Binary / Decimal / Hexadecimal 间切换；所有值统一按十进制数值存入配置，范围为 `0` 到 `64K`（`0b1_0000_0000_0000_0000` / `0x10000` / `65536`）。
-- **Screen Size**: 配置屏幕空间宽高，是 Top View / 3D View 中 screen 平面的基础范围。
+- **Config Number Base**: 控制 Screen Size、Screen Offset、Depth Surface Size、Render Target Size、Clip Region、Scissor、Tile Size 这七组数值输入的显示/输入进制，可在 Binary / Decimal / Hexadecimal 间切换；尺寸类配置通常保持 `0..64K`，X/Y/offset 类配置支持 `-64K..64K`，Clip/Scissor 宽高最大可覆盖完整 signed 显示域。
+- **Screen Size**: 配置屏幕空间宽高，是 Top View / 3D View 中 screen 平面的基础范围；可显示和可光栅化的全局 X/Y 坐标域为 `-64K..64K`，因此负坐标三角形不会被默认 screen rectangle 裁掉。
 - **Screen Offset**: 配置 X/Y 共用的 offset，默认模式下 screen 实际范围为 `[offset, offset + width)` / `[offset, offset + height)`，tile 索引按减去 screen 起点后计算；勾选 `Subtract from coordinates` 后 screen 保持从 `(0,0)` 开始，所有三角形 X/Y 在光栅化和绘制前自动减去 offset。
 - **Depth Surface Size**: 配置 depth surface 宽高，可通过 `Depth Surf` 开关在 Top View / 3D View / Popout 中显示边界。
 - **Render Target Size**: 配置 render target 宽高，可通过 `RT Surf` 开关在 Top View / 3D View / Popout 中显示边界。
@@ -63,8 +63,8 @@ python main.py
     "subtract_screen_offset": false,
     "depth_surface_size": [800, 600],
     "render_target_size": [800, 600],
-    "clip_region": [0, 0, 800, 600],
-    "scissor": [0, 0, 800, 600],
+    "clip_region": [-65536, -65536, 131072, 131072],
+    "scissor": [-65536, -65536, 131072, 131072],
     "tile_size": [16, 16]
   },
   "triangles": [
@@ -237,6 +237,11 @@ python main.py
 ```
 
 ## 版本日志
+
+### v1.4.11 (2026-04-30)
+- 可显示/可光栅化的全局 X/Y 坐标域扩展为 `-64K..64K`，负坐标三角形不再被默认 screen rectangle 裁掉；默认 Clip/Scissor 覆盖完整 signed 显示域。
+- Top View 和 3D View 的 raster pixel 绘制改为按真实坐标稀疏绘制，避免为 `-64K..64K` 创建巨大 QImage；Go Top、hover、Depth Side View 和滚动条同步支持负坐标。
+- 配置面板与 JSON 导入支持 signed 的 Screen Offset、Clip/Scissor X/Y，Clip/Scissor 宽高最大可覆盖完整 signed 显示域。
 
 ### v1.4.10 (2026-04-30)
 - 俯视图重叠三角形改为按 Z 深度决定上下层：非 MSAA 像素缓存、MSAA resolve 和选中像素的 sample mask 都优先保留 Z 更大的三角形。

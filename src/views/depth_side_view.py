@@ -50,6 +50,22 @@ class DepthSideView(QWidget):
             return 0.0
         return max(-1_000_000.0, min(1_000_000.0, value))
 
+    def _x_range(self) -> Tuple[float, float]:
+        if not self.config:
+            return (0.0, 1.0)
+        min_x = float(self.config.screen_origin + self.config.coordinate_offset)
+        max_x = float(self.config.screen_origin + self.config.coordinate_offset + self.config.screen_width)
+        for triangle in self.triangles:
+            for vx, _, _ in triangle.vertices:
+                if math.isfinite(vx):
+                    min_x = min(min_x, vx)
+                    max_x = max(max_x, vx)
+        min_x = max(float(self.config.display_min_x), min_x)
+        max_x = min(float(self.config.display_max_x), max_x)
+        if max_x <= min_x:
+            max_x = min_x + 1.0
+        return (min_x, max_x)
+
     def _map_x(self, screen_x: float) -> float:
         """将屏幕 X 坐标映射到视图坐标（含缩放偏移）"""
         if not self.config:
@@ -57,8 +73,9 @@ class DepthSideView(QWidget):
         width = self.width() - self.margin_left - self.margin_right
         if self.config.screen_width <= 0:
             return self._safe_view_coord(self.margin_left + self.offset_x)
-        relative_x = screen_x - self.config.coordinate_offset - self.config.screen_origin
-        base = self.margin_left + (relative_x / self.config.screen_width) * width
+        min_x, max_x = self._x_range()
+        relative_x = screen_x - min_x
+        base = self.margin_left + (relative_x / (max_x - min_x)) * width
         mapped = self.margin_left + (base - self.margin_left) * self.zoom + self.offset_x
         return self._safe_view_coord(mapped)
 
@@ -110,11 +127,10 @@ class DepthSideView(QWidget):
         painter.drawText(5, self.height() // 2, "Depth")
 
         # X 轴标签
-        screen_min_x = self.config.screen_origin + self.config.coordinate_offset
-        screen_max_x = self.config.screen_origin + self.config.screen_width + self.config.coordinate_offset
-        painter.drawText(int(self._map_x(screen_min_x)), y_axis_bottom + 15, str(screen_min_x))
+        screen_min_x, screen_max_x = self._x_range()
+        painter.drawText(int(self._map_x(screen_min_x)), y_axis_bottom + 15, str(int(screen_min_x)))
         painter.drawText(int(self._map_x(screen_max_x)) - 30, y_axis_bottom + 15,
-                         str(screen_max_x))
+                         str(int(screen_max_x)))
 
         # 绘制三角形深度剖面
         if self.triangles:

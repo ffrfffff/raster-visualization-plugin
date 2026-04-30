@@ -3,6 +3,10 @@ from typing import Tuple
 from PyQt6.QtCore import QObject, pyqtSignal
 
 
+DISPLAY_COORD_MIN = -64 * 1024
+DISPLAY_COORD_MAX = 64 * 1024
+
+
 @dataclass
 class RasterConfig:
     """光栅化配置参数"""
@@ -13,10 +17,10 @@ class RasterConfig:
     subtract_screen_offset: bool = False
     depth_surface_width: int = 800
     depth_surface_height: int = 600
-    clip_region: Tuple[int, int, int, int] = (0, 0, 800, 600)
+    clip_region: Tuple[int, int, int, int] = (DISPLAY_COORD_MIN, DISPLAY_COORD_MIN, DISPLAY_COORD_MAX - DISPLAY_COORD_MIN, DISPLAY_COORD_MAX - DISPLAY_COORD_MIN)
     rt_width: int = 800
     rt_height: int = 600
-    scissor: Tuple[int, int, int, int] = (0, 0, 800, 600)
+    scissor: Tuple[int, int, int, int] = (DISPLAY_COORD_MIN, DISPLAY_COORD_MIN, DISPLAY_COORD_MAX - DISPLAY_COORD_MIN, DISPLAY_COORD_MAX - DISPLAY_COORD_MIN)
     tile_width: int = 16
     tile_height: int = 16
 
@@ -41,20 +45,36 @@ class RasterConfig:
         return self.screen_offset if self.subtract_screen_offset else 0
 
     @property
+    def display_min_x(self) -> int:
+        return DISPLAY_COORD_MIN
+
+    @property
+    def display_min_y(self) -> int:
+        return DISPLAY_COORD_MIN
+
+    @property
+    def display_max_x(self) -> int:
+        return DISPLAY_COORD_MAX
+
+    @property
+    def display_max_y(self) -> int:
+        return DISPLAY_COORD_MAX
+
+    @property
     def screen_min_x(self) -> int:
-        return self.screen_origin
+        return self.display_min_x
 
     @property
     def screen_min_y(self) -> int:
-        return self.screen_origin
+        return self.display_min_y
 
     @property
     def screen_max_x(self) -> int:
-        return self.screen_origin + self.screen_width
+        return self.display_max_x
 
     @property
     def screen_max_y(self) -> int:
-        return self.screen_origin + self.screen_height
+        return self.display_max_y
 
     @property
     def msaa_levels(self) -> list:

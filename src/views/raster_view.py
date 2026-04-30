@@ -120,6 +120,41 @@ class RasterView(QWidget):
 
         self._pixel_image_dirty = False
 
+    def _draw_sparse_raster_pixels(self, painter: QPainter, scale: float, ox: float, oy: float):
+        if not self.config or not self.rasterized_results:
+            return
+
+        min_x = max(self.config.display_min_x, int(math.floor((-ox) / scale)) - 1)
+        min_y = max(self.config.display_min_y, int(math.floor((-oy) / scale)) - 1)
+        max_x = min(self.config.display_max_x, int(math.ceil((self.width() - ox) / scale)) + 1)
+        max_y = min(self.config.display_max_y, int(math.ceil((self.height() - oy) / scale)) + 1)
+        pixel_size = max(1, int(math.ceil(scale)))
+        painter.setPen(Qt.PenStyle.NoPen)
+
+        if self.config.msaa > 1 and self.rasterizer:
+            for (px, py), (r, g, b) in self.rasterizer.resolve_msaa(self.rasterized_results).items():
+                if not (min_x <= px < max_x and min_y <= py < max_y):
+                    continue
+                painter.setBrush(QBrush(QColor(r, g, b, 200)))
+                painter.drawRect(int(ox + px * scale), int(oy + py * scale), pixel_size, pixel_size)
+            return
+
+        best_pixels = {}
+        for result in self.rasterized_results:
+            color = result.triangle.color
+            for (px, py), ratio in result.coverage_ratio.items():
+                if not (min_x <= px < max_x and min_y <= py < max_y):
+                    continue
+                depth = result.pixel_center_depth.get((px, py))
+                if depth is None:
+                    continue
+                if (px, py) not in best_pixels or depth > best_pixels[(px, py)][0]:
+                    best_pixels[(px, py)] = (depth, color, int(200 * ratio))
+
+        for (px, py), (_, color, alpha) in best_pixels.items():
+            painter.setBrush(QBrush(QColor(color[0], color[1], color[2], alpha)))
+            painter.drawRect(int(ox + px * scale), int(oy + py * scale), pixel_size, pixel_size)
+
     def _safe_int(self, value: float) -> Optional[int]:
         if not isinstance(value, (int, float)):
             return None
@@ -169,16 +204,9 @@ class RasterView(QWidget):
         screen_rect = QRect(int(screen_vx), int(screen_vy), int(sw * scale), int(sh * scale))
         painter.fillRect(screen_rect, QColor(40, 40, 50))
 
-        # ---- 光栅化像素 (QImage 一次性绘制) ----
+        # ---- 光栅化像素 ----
         if self.show_raster_pixels and self.rasterized_results:
-            if self._pixel_image_dirty:
-                self._rebuild_pixel_image()
-
-            # MSAA>1 时使用 resolved 图，否则用基础 coverage 图
-            draw_img = self._pixel_image_msaa if (self.config.msaa > 1 and self._pixel_image_msaa) else self._pixel_image
-            if draw_img:
-                target_rect = QRect(int(screen_vx), int(screen_vy), int(sw * scale), int(sh * scale))
-                painter.drawImage(target_rect, draw_img)
+            self._draw_sparse_raster_pixels(painter, scale, ox, oy)
 
         # ---- Tile 网格 ----
         if self.show_tiles and self.config.tile_width > 0 and self.config.tile_height > 0:
@@ -480,7 +508,7 @@ class RasterView(QWidget):
             self.setCursor(Qt.CursorShape.ClosedHandCursor)
         elif event.button() == Qt.MouseButton.LeftButton:
             sx, sy = self._view_to_screen(event.pos().x(), event.pos().y())
-            if self.config and self.config.tile_width > 0 and self.config.tile_height > 0 and self.config.screen_origin <= sx < self.config.screen_origin + self.config.screen_width and self.config.screen_origin <= sy < self.config.screen_origin + self.config.screen_height:
+            if self.config and self.config.tile_width > 0 and self.config.tile_height > 0 and self.config.display_min_x <= sx < self.config.display_max_x and self.config.display_min_y <= sy < self.config.display_max_y:
                 tile_x = int(sx - self.config.screen_origin) // self.config.tile_width
                 tile_y = int(sy - self.config.screen_origin) // self.config.tile_height
                 self.selected_msaa_pixel = (int(sx), int(sy))
@@ -501,7 +529,7 @@ class RasterView(QWidget):
             self.update()
         else:
             sx, sy = self._view_to_screen(event.pos().x(), event.pos().y())
-            if self.config and self.config.tile_width > 0 and self.config.tile_height > 0 and self.config.screen_origin <= sx < self.config.screen_origin + self.config.screen_width and self.config.screen_origin <= sy < self.config.screen_origin + self.config.screen_height:
+            if self.config and self.config.tile_width > 0 and self.config.tile_height > 0 and self.config.display_min_x <= sx < self.config.display_max_x and self.config.display_min_y <= sy < self.config.display_max_y:
                 tile_x = int(sx - self.config.screen_origin) // self.config.tile_width
                 tile_y = int(sy - self.config.screen_origin) // self.config.tile_height
                 QToolTip.showText(
@@ -515,12 +543,28 @@ class RasterView(QWidget):
             self.setCursor(Qt.CursorShape.ArrowCursor)
 
     def fit_to_view(self):
-        if self.config and self.config.screen_width > 0 and self.config.screen_height > 0:
+        if self.config:
             margin = 30
-            self.zoom = min((self.width() - 2 * margin) / self.config.screen_width,
-                            (self.height() - 2 * margin) / self.config.screen_height)
-            self.offset_x = margin - self.config.screen_origin * self.zoom
-            self.offset_y = margin - self.config.screen_origin * self.zoom
+            min_x = self.config.screen_origin
+            min_y = self.config.screen_origin
+            max_x = self.config.screen_origin + self.config.screen_width
+            max_y = self.config.screen_origin + self.config.screen_height
+            for triangle in self.triangles:
+                for vx, vy, _ in triangle.vertices:
+                    if math.isfinite(vx) and math.isfinite(vy):
+                        draw_x = vx - self.config.coordinate_offset
+                        draw_y = vy - self.config.coordinate_offset
+                        min_x = min(min_x, draw_x)
+                        min_y = min(min_y, draw_y)
+                        max_x = max(max_x, draw_x)
+                        max_y = max(max_y, draw_y)
+            width = max(1.0, max_x - min_x)
+            height = max(1.0, max_y - min_y)
+            self.zoom = min((self.width() - 2 * margin) / width,
+                            (self.height() - 2 * margin) / height)
+            self.zoom = max(0.1, min(50.0, self.zoom))
+            self.offset_x = margin - min_x * self.zoom
+            self.offset_y = margin - min_y * self.zoom
             self.update()
 
     def zoom_in(self):
@@ -542,9 +586,8 @@ class RasterView(QWidget):
     def center_on_screen_position(self, x: float, y: float):
         if not self.config:
             return
-        screen_min = float(self.config.screen_origin)
-        x = max(screen_min, min(float(self.config.screen_origin + self.config.screen_width), float(x)))
-        y = max(screen_min, min(float(self.config.screen_origin + self.config.screen_height), float(y)))
+        x = max(float(self.config.display_min_x), min(float(self.config.display_max_x), float(x)))
+        y = max(float(self.config.display_min_y), min(float(self.config.display_max_y), float(y)))
         self.offset_x = self.width() / 2 - x * self.zoom
         self.offset_y = self.height() / 2 - y * self.zoom
         self.update()

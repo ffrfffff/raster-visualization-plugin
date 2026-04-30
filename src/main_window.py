@@ -6,7 +6,7 @@ from PyQt6.QtWidgets import (
 )
 from PyQt6.QtCore import Qt
 from pathlib import Path
-from .models.config import RasterConfigModel
+from .models.config import DISPLAY_COORD_MAX, DISPLAY_COORD_MIN, RasterConfigModel
 from .models.triangle import Triangle, TriangleListModel
 from .views.config_panel import ConfigPanel
 from .views.raster_view import RasterView
@@ -88,10 +88,10 @@ class MainWindow(QMainWindow):
         self.view_tabs.addTab(self.view3d, "3D View")
 
         self.main_h_scroll = QScrollBar(Qt.Orientation.Horizontal)
-        self.main_h_scroll.setRange(-5000, 5000)
+        self.main_h_scroll.setRange(DISPLAY_COORD_MIN, DISPLAY_COORD_MAX)
         self.main_h_scroll.setValue(0)
         self.main_v_scroll = QScrollBar(Qt.Orientation.Vertical)
-        self.main_v_scroll.setRange(-5000, 5000)
+        self.main_v_scroll.setRange(DISPLAY_COORD_MIN, DISPLAY_COORD_MAX)
         self.main_v_scroll.setValue(0)
 
         main_view_grid.addWidget(self.view_tabs, 0, 0)
@@ -108,10 +108,10 @@ class MainWindow(QMainWindow):
         self.depth_view = DepthSideView()
         self.depth_view.set_config(self.config_model.config)
         self.depth_h_scroll = QScrollBar(Qt.Orientation.Horizontal)
-        self.depth_h_scroll.setRange(-5000, 5000)
+        self.depth_h_scroll.setRange(DISPLAY_COORD_MIN, DISPLAY_COORD_MAX)
         self.depth_h_scroll.setValue(0)
         self.depth_v_scroll = QScrollBar(Qt.Orientation.Vertical)
-        self.depth_v_scroll.setRange(-5000, 5000)
+        self.depth_v_scroll.setRange(DISPLAY_COORD_MIN, DISPLAY_COORD_MAX)
         self.depth_v_scroll.setValue(0)
         depth_grid.addWidget(self.depth_view, 0, 0)
         depth_grid.addWidget(self.depth_v_scroll, 0, 1)
@@ -223,11 +223,11 @@ class MainWindow(QMainWindow):
         options_layout3 = QHBoxLayout()
         options_layout3.addWidget(QLabel("Go Top X:"))
         self.goto_x_spin = QSpinBox()
-        self.goto_x_spin.setRange(self.config_model.config.screen_origin + self.config_model.config.coordinate_offset, self.config_model.config.screen_origin + self.config_model.config.coordinate_offset + self.config_model.config.screen_width)
+        self.goto_x_spin.setRange(DISPLAY_COORD_MIN, DISPLAY_COORD_MAX)
         self.goto_x_spin.setValue(self.config_model.config.screen_origin + self.config_model.config.coordinate_offset + self.config_model.config.screen_width // 2)
         self.goto_x_spin.setFixedWidth(80)
         self.goto_y_spin = QSpinBox()
-        self.goto_y_spin.setRange(self.config_model.config.screen_origin + self.config_model.config.coordinate_offset, self.config_model.config.screen_origin + self.config_model.config.coordinate_offset + self.config_model.config.screen_height)
+        self.goto_y_spin.setRange(DISPLAY_COORD_MIN, DISPLAY_COORD_MAX)
         self.goto_y_spin.setValue(self.config_model.config.screen_origin + self.config_model.config.coordinate_offset + self.config_model.config.screen_height // 2)
         self.goto_y_spin.setFixedWidth(80)
         self.goto_btn = QPushButton("Go")
@@ -409,11 +409,10 @@ class MainWindow(QMainWindow):
         self.raster_view.set_config(self.config_model.config)
         self.depth_view.set_config(self.config_model.config)
         self.view3d.set_config(self.config_model.config)
-        offset = self.config_model.config.screen_origin + self.config_model.config.coordinate_offset
-        self.goto_x_spin.setRange(offset, offset + self.config_model.config.screen_width)
-        self.goto_y_spin.setRange(offset, offset + self.config_model.config.screen_height)
-        self.goto_x_spin.setValue(max(offset, min(self.goto_x_spin.value(), offset + self.config_model.config.screen_width)))
-        self.goto_y_spin.setValue(max(offset, min(self.goto_y_spin.value(), offset + self.config_model.config.screen_height)))
+        self.goto_x_spin.setRange(DISPLAY_COORD_MIN, DISPLAY_COORD_MAX)
+        self.goto_y_spin.setRange(DISPLAY_COORD_MIN, DISPLAY_COORD_MAX)
+        self.goto_x_spin.setValue(max(DISPLAY_COORD_MIN, min(self.goto_x_spin.value(), DISPLAY_COORD_MAX)))
+        self.goto_y_spin.setValue(max(DISPLAY_COORD_MIN, min(self.goto_y_spin.value(), DISPLAY_COORD_MAX)))
         self._update_views()
 
     def _on_triangles_changed(self):
@@ -491,11 +490,10 @@ class MainWindow(QMainWindow):
         self.raster_view.set_config(self.config_model.config)
         self.depth_view.set_config(self.config_model.config)
         self.view3d.set_config(self.config_model.config)
-        offset = self.config_model.config.screen_origin + self.config_model.config.coordinate_offset
-        self.goto_x_spin.setRange(offset, offset + self.config_model.config.screen_width)
-        self.goto_y_spin.setRange(offset, offset + self.config_model.config.screen_height)
-        self.goto_x_spin.setValue(max(offset, min(self.goto_x_spin.value(), offset + self.config_model.config.screen_width)))
-        self.goto_y_spin.setValue(max(offset, min(self.goto_y_spin.value(), offset + self.config_model.config.screen_height)))
+        self.goto_x_spin.setRange(DISPLAY_COORD_MIN, DISPLAY_COORD_MAX)
+        self.goto_y_spin.setRange(DISPLAY_COORD_MIN, DISPLAY_COORD_MAX)
+        self.goto_x_spin.setValue(max(DISPLAY_COORD_MIN, min(self.goto_x_spin.value(), DISPLAY_COORD_MAX)))
+        self.goto_y_spin.setValue(max(DISPLAY_COORD_MIN, min(self.goto_y_spin.value(), DISPLAY_COORD_MAX)))
         self._update_views()
         self.triangle_panel.update_triangles(self.triangle_model.triangles)
 

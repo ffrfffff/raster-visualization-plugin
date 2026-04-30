@@ -89,15 +89,13 @@ class View3D(QWidget):
         if not self.config or not self._is_flat_top_view():
             if not self.config:
                 return (0, 0, 0, 0)
-            so = self.config.screen_origin
-            return (so, so, so + self.config.screen_width, so + self.config.screen_height)
-        so = self.config.screen_origin
-        top_left = self._screen_point_from_view(0, 0) or (so, so)
-        bottom_right = self._screen_point_from_view(self.width(), self.height()) or (so + self.config.screen_width, so + self.config.screen_height)
-        min_x = max(so, int(math.floor(min(top_left[0], bottom_right[0]))) - pad)
-        min_y = max(so, int(math.floor(min(top_left[1], bottom_right[1]))) - pad)
-        max_x = min(so + self.config.screen_width, int(math.ceil(max(top_left[0], bottom_right[0]))) + pad)
-        max_y = min(so + self.config.screen_height, int(math.ceil(max(top_left[1], bottom_right[1]))) + pad)
+            return (self.config.display_min_x, self.config.display_min_y, self.config.display_max_x, self.config.display_max_y)
+        top_left = self._screen_point_from_view(0, 0) or (self.config.display_min_x, self.config.display_min_y)
+        bottom_right = self._screen_point_from_view(self.width(), self.height()) or (self.config.display_max_x, self.config.display_max_y)
+        min_x = max(self.config.display_min_x, int(math.floor(min(top_left[0], bottom_right[0]))) - pad)
+        min_y = max(self.config.display_min_y, int(math.floor(min(top_left[1], bottom_right[1]))) - pad)
+        max_x = min(self.config.display_max_x, int(math.ceil(max(top_left[0], bottom_right[0]))) + pad)
+        max_y = min(self.config.display_max_y, int(math.ceil(max(top_left[1], bottom_right[1]))) + pad)
         return (min_x, min_y, max_x, max_y)
 
     def _rebuild_pixel_image(self):
@@ -337,11 +335,34 @@ class View3D(QWidget):
             return
 
         if self._is_flat_top_view():
-            if self._pixel_image_dirty:
-                self._rebuild_pixel_image()
-            draw_img = self._pixel_image_msaa if (self.config.msaa > 1 and self._pixel_image_msaa) else self._pixel_image
-            if draw_img:
-                painter.drawImage(self._screen_to_top_view_rect(), draw_img)
+            min_x, min_y, max_x, max_y = self._visible_screen_bounds()
+            pixel_size = max(1, int(math.ceil(self._projected_pixel_size())))
+            painter.setPen(Qt.PenStyle.NoPen)
+            if self.config.msaa > 1 and self.rasterizer:
+                for (px, py), (r, g, b) in self.rasterizer.resolve_msaa(self.rasterized_results).items():
+                    if not (min_x <= px < max_x and min_y <= py < max_y):
+                        continue
+                    sx, sy = self._project(px, py, 0)
+                    painter.setBrush(QBrush(QColor(r, g, b, 205)))
+                    painter.drawRect(int(sx), int(sy), pixel_size, pixel_size)
+                return
+
+            best_pixels = {}
+            for result in self.rasterized_results:
+                color = result.triangle.color
+                for (px, py), ratio in result.coverage_ratio.items():
+                    if not (min_x <= px < max_x and min_y <= py < max_y):
+                        continue
+                    depth = result.pixel_center_depth.get((px, py))
+                    if depth is None:
+                        continue
+                    if (px, py) not in best_pixels or depth > best_pixels[(px, py)][0]:
+                        best_pixels[(px, py)] = (depth, color, int(210 * ratio))
+
+            for (px, py), (_, color, alpha) in best_pixels.items():
+                sx, sy = self._project(px, py, 0)
+                painter.setBrush(QBrush(QColor(color[0], color[1], color[2], alpha)))
+                painter.drawRect(int(sx), int(sy), pixel_size, pixel_size)
             return
 
         min_x, min_y, max_x, max_y = self._visible_screen_bounds()
@@ -728,7 +749,7 @@ class View3D(QWidget):
             return
         sx, sy = screen_pos
         so = self.config.screen_origin
-        if self.config.tile_width > 0 and self.config.tile_height > 0 and so <= sx < so + self.config.screen_width and so <= sy < so + self.config.screen_height:
+        if self.config.tile_width > 0 and self.config.tile_height > 0 and self.config.display_min_x <= sx < self.config.display_max_x and self.config.display_min_y <= sy < self.config.display_max_y:
             tile_x = int(sx - so) // self.config.tile_width
             tile_y = int(sy - so) // self.config.tile_height
             if select:

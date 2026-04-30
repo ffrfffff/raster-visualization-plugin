@@ -4,6 +4,7 @@
 """
 from PyQt6.QtWidgets import QMainWindow, QWidget, QToolBar, QGridLayout, QScrollBar
 from PyQt6.QtCore import Qt
+from ..models.config import DISPLAY_COORD_MAX, DISPLAY_COORD_MIN
 
 
 class PopoutWindow(QMainWindow):
@@ -26,9 +27,9 @@ class PopoutWindow(QMainWindow):
         layout.addWidget(self.view, 0, 0)
 
         self.h_scroll = QScrollBar(Qt.Orientation.Horizontal)
-        self.h_scroll.setRange(-5000, 5000)
+        self.h_scroll.setRange(DISPLAY_COORD_MIN, DISPLAY_COORD_MAX)
         self.v_scroll = QScrollBar(Qt.Orientation.Vertical)
-        self.v_scroll.setRange(-5000, 5000)
+        self.v_scroll.setRange(DISPLAY_COORD_MIN, DISPLAY_COORD_MAX)
         layout.addWidget(self.v_scroll, 0, 1)
         layout.addWidget(self.h_scroll, 1, 0)
         layout.setRowStretch(0, 1)

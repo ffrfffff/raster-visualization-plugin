@@ -1,7 +1,7 @@
 import json
 from typing import Any, List, Tuple
 
-from ..models.config import RasterConfig
+from ..models.config import DISPLAY_COORD_MAX, DISPLAY_COORD_MIN, RasterConfig
 from ..models.triangle import Triangle
 
 
@@ -69,8 +69,8 @@ def _parse_optional_int(config: dict, key: str, default: int) -> int:
     value = config.get(key, default)
     if not isinstance(value, int) or isinstance(value, bool):
         raise ValueError(f"config.{key} must be an integer")
-    if value < 0 or value > 64 * 1024:
-        raise ValueError(f"config.{key} must be in [0, 65536]")
+    if value < DISPLAY_COORD_MIN or value > DISPLAY_COORD_MAX:
+        raise ValueError(f"config.{key} must be in [{DISPLAY_COORD_MIN}, {DISPLAY_COORD_MAX}]")
     return value
 
 
@@ -88,6 +88,8 @@ def _parse_size(config: dict, key: str) -> Tuple[int, int]:
     width, height = int(values[0]), int(values[1])
     if width <= 0 or height <= 0:
         raise ValueError(f"config.{key} width and height must be positive")
+    if width > DISPLAY_COORD_MAX - DISPLAY_COORD_MIN or height > DISPLAY_COORD_MAX - DISPLAY_COORD_MIN:
+        raise ValueError(f"config.{key} width and height must be <= {DISPLAY_COORD_MAX - DISPLAY_COORD_MIN}")
     return width, height
 
 
@@ -96,8 +98,12 @@ def _parse_region(config: dict, key: str) -> Tuple[int, int, int, int]:
     if not _is_int_array(values, 4):
         raise ValueError(f"config.{key} must be [x, y, width, height]")
     x, y, width, height = (int(v) for v in values)
+    if x < DISPLAY_COORD_MIN or x > DISPLAY_COORD_MAX or y < DISPLAY_COORD_MIN or y > DISPLAY_COORD_MAX:
+        raise ValueError(f"config.{key} x and y must be in [{DISPLAY_COORD_MIN}, {DISPLAY_COORD_MAX}]")
     if width <= 0 or height <= 0:
         raise ValueError(f"config.{key} width and height must be positive")
+    if width > DISPLAY_COORD_MAX - DISPLAY_COORD_MIN or height > DISPLAY_COORD_MAX - DISPLAY_COORD_MIN:
+        raise ValueError(f"config.{key} width and height must be <= {DISPLAY_COORD_MAX - DISPLAY_COORD_MIN}")
     return x, y, width, height
 
 

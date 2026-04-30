@@ -4,18 +4,21 @@ from PyQt6.QtWidgets import (
 )
 from PyQt6.QtCore import pyqtSignal
 from PyQt6.QtGui import QValidator
-from ..models.config import RasterConfigModel
+from ..models.config import DISPLAY_COORD_MAX, DISPLAY_COORD_MIN, RasterConfigModel
 
 
 CONFIG_VALUE_MIN = 0
 CONFIG_VALUE_MAX = 64 * 1024
+REGION_SIZE_VALUE_MAX = DISPLAY_COORD_MAX - DISPLAY_COORD_MIN
+SIGNED_CONFIG_VALUE_MIN = DISPLAY_COORD_MIN
+SIGNED_CONFIG_VALUE_MAX = DISPLAY_COORD_MAX
 
 
 class RadixSpinBox(QSpinBox):
-    def __init__(self):
+    def __init__(self, minimum: int = CONFIG_VALUE_MIN, maximum: int = CONFIG_VALUE_MAX):
         super().__init__()
         self._radix = 10
-        self.setRange(CONFIG_VALUE_MIN, CONFIG_VALUE_MAX)
+        self.setRange(minimum, maximum)
         self.setMinimumWidth(95)
 
     def set_radix(self, radix: int):
@@ -23,10 +26,12 @@ class RadixSpinBox(QSpinBox):
         self.lineEdit().setText(self.textFromValue(self.value()))
 
     def textFromValue(self, value: int) -> str:
+        sign = "-" if value < 0 else ""
+        magnitude = abs(value)
         if self._radix == 2:
-            return f"0b{value:b}"
+            return f"{sign}0b{magnitude:b}"
         if self._radix == 16:
-            return f"0x{value:X}"
+            return f"{sign}0x{magnitude:X}"
         return str(value)
 
     def valueFromText(self, text: str) -> int:
@@ -39,7 +44,7 @@ class RadixSpinBox(QSpinBox):
     def validate(self, text: str, pos: int):
         del pos
         stripped = text.strip().replace("_", "")
-        if stripped in {"", "0b", "0B", "0x", "0X"}:
+        if stripped in {"", "-", "0b", "0B", "0x", "0X", "-0b", "-0B", "-0x", "-0X"}:
             return (QValidator.State.Intermediate, text, len(text))
         try:
             value = self._parse_text(text)
@@ -51,12 +56,15 @@ class RadixSpinBox(QSpinBox):
 
     def _parse_text(self, text: str) -> int:
         stripped = text.strip().replace("_", "")
+        sign = -1 if stripped.startswith("-") else 1
+        if stripped.startswith(("+", "-")):
+            stripped = stripped[1:]
         lowered = stripped.lower()
         if lowered.startswith("0b"):
-            return int(stripped[2:], 2)
+            return sign * int(stripped[2:], 2)
         if lowered.startswith("0x"):
-            return int(stripped[2:], 16)
-        return int(stripped, self._radix)
+            return sign * int(stripped[2:], 16)
+        return sign * int(stripped, self._radix)
 
 
 class ConfigPanel(QWidget):
@@ -108,7 +116,7 @@ class ConfigPanel(QWidget):
         # Screen Offset
         offset_group = QGroupBox("Screen Offset")
         offset_layout = QHBoxLayout(offset_group)
-        self.screen_offset_spin = self._create_config_spinbox(0)
+        self.screen_offset_spin = self._create_config_spinbox(0, SIGNED_CONFIG_VALUE_MIN, SIGNED_CONFIG_VALUE_MAX)
         self.subtract_screen_offset_cb = QCheckBox("Subtract from coordinates")
         offset_layout.addWidget(QLabel("Offset:"))
         offset_layout.addWidget(self.screen_offset_spin)
@@ -141,15 +149,15 @@ class ConfigPanel(QWidget):
         clip_group = QGroupBox("Clip Region")
         clip_layout = QVBoxLayout(clip_group)
         clip_row1 = QHBoxLayout()
-        self.clip_x_spin = self._create_config_spinbox(0)
-        self.clip_y_spin = self._create_config_spinbox(0)
+        self.clip_x_spin = self._create_config_spinbox(0, SIGNED_CONFIG_VALUE_MIN, SIGNED_CONFIG_VALUE_MAX)
+        self.clip_y_spin = self._create_config_spinbox(0, SIGNED_CONFIG_VALUE_MIN, SIGNED_CONFIG_VALUE_MAX)
         clip_row1.addWidget(QLabel("X:"))
         clip_row1.addWidget(self.clip_x_spin)
         clip_row1.addWidget(QLabel("Y:"))
         clip_row1.addWidget(self.clip_y_spin)
         clip_row2 = QHBoxLayout()
-        self.clip_w_spin = self._create_config_spinbox(800)
-        self.clip_h_spin = self._create_config_spinbox(600)
+        self.clip_w_spin = self._create_config_spinbox(800, 1, REGION_SIZE_VALUE_MAX)
+        self.clip_h_spin = self._create_config_spinbox(600, 1, REGION_SIZE_VALUE_MAX)
         clip_row2.addWidget(QLabel("W:"))
         clip_row2.addWidget(self.clip_w_spin)
         clip_row2.addWidget(QLabel("H:"))
@@ -162,15 +170,15 @@ class ConfigPanel(QWidget):
         scissor_group = QGroupBox("Scissor")
         scissor_layout = QVBoxLayout(scissor_group)
         scissor_row1 = QHBoxLayout()
-        self.scissor_x_spin = self._create_config_spinbox(0)
-        self.scissor_y_spin = self._create_config_spinbox(0)
+        self.scissor_x_spin = self._create_config_spinbox(0, SIGNED_CONFIG_VALUE_MIN, SIGNED_CONFIG_VALUE_MAX)
+        self.scissor_y_spin = self._create_config_spinbox(0, SIGNED_CONFIG_VALUE_MIN, SIGNED_CONFIG_VALUE_MAX)
         scissor_row1.addWidget(QLabel("X:"))
         scissor_row1.addWidget(self.scissor_x_spin)
         scissor_row1.addWidget(QLabel("Y:"))
         scissor_row1.addWidget(self.scissor_y_spin)
         scissor_row2 = QHBoxLayout()
-        self.scissor_w_spin = self._create_config_spinbox(800)
-        self.scissor_h_spin = self._create_config_spinbox(600)
+        self.scissor_w_spin = self._create_config_spinbox(800, 1, REGION_SIZE_VALUE_MAX)
+        self.scissor_h_spin = self._create_config_spinbox(600, 1, REGION_SIZE_VALUE_MAX)
         scissor_row2.addWidget(QLabel("W:"))
         scissor_row2.addWidget(self.scissor_w_spin)
         scissor_row2.addWidget(QLabel("H:"))
@@ -198,8 +206,8 @@ class ConfigPanel(QWidget):
 
         self.setMaximumWidth(300)
 
-    def _create_config_spinbox(self, value: int) -> RadixSpinBox:
-        spinbox = RadixSpinBox()
+    def _create_config_spinbox(self, value: int, minimum: int = CONFIG_VALUE_MIN, maximum: int = CONFIG_VALUE_MAX) -> RadixSpinBox:
+        spinbox = RadixSpinBox(minimum, maximum)
         spinbox.setValue(value)
         self.config_spinboxes.append(spinbox)
         return spinbox
