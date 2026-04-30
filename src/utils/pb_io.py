@@ -7,6 +7,14 @@ from typing import Dict, List, Optional, Tuple, Union
 
 from ..models.config import DISPLAY_COORD_MAX, DISPLAY_COORD_MIN, RasterConfig
 from ..models.triangle import Triangle
+from .pb_instruction import (
+    CS_MASK_FMT_FULL,
+    PbInstruction,
+    format_pb_instruction_table as format_pb_instruction_3_1_table,
+    format_pb_instruction_words,
+    make_pb_instruction,
+    parse_pb_instruction_text,
+)
 from .pb_rules import (
     INDEX_DATA_BITS,
     INDEX_DATA_FIELD_OFFSETS,
@@ -106,7 +114,8 @@ def load_pb_dump(
     if output_path is not None:
         if words is None:
             words = parse_memory_dump(text)
-        _write_parsed_pb_dump(output_path, words, coords, index_data, point_mode)
+        instruction = parse_pb_instruction_text(text)
+        _write_parsed_pb_dump(output_path, words, coords, index_data, point_mode, instruction)
 
     config = RasterConfig()
     if triangles:
@@ -135,10 +144,9 @@ def save_pb_dump(path: str, config: RasterConfig, triangles: List[Triangle]) -> 
         raise ValueError(f"PB dump v1 supports at most {MAX_VERTEX_COUNT} vertices")
 
     index_words = [_pack_index_data(i * 3, i * 3 + 1, i * 3 + 2) for i in range(len(triangles))]
-    instruction = _randomize_pb_instruction()
-    _apply_pb_instruction_constraints(instruction)
-    this_is_point_primblk = instruction.primitive_values["this_is_point_primblk"]
-    words, index_data_start_bit = _randomize_pb_memory(len(vertices), len(index_words), instruction)
+    this_is_point_primblk = 0
+    instruction = _make_default_pb_instruction(this_is_point_primblk, len(triangles))
+    words, index_data_start_bit = _randomize_pb_memory(len(vertices), len(index_words), this_is_point_primblk)
     _enforce_ispa_objtype_consistency(words, this_is_point_primblk)
     emitted_index_words = [] if this_is_point_primblk else index_words
     for index, raw in enumerate(emitted_index_words):
@@ -188,19 +196,20 @@ def format_annotated_pb_dump(
     vertices: List[Tuple[float, float, float]],
     index_words: Optional[List[int]] = None,
     this_is_point_primblk: Optional[int] = None,
-    instruction: Optional[PbInstructionRandom] = None,
+    instruction: Optional[PbInstruction] = None,
 ) -> str:
     if index_words is None:
         index_words = []
     if this_is_point_primblk is None:
         this_is_point_primblk = 0 if index_words else 1
     if instruction is None:
-        instruction = _randomize_pb_instruction()
-        instruction.primitive_values["this_is_point_primblk"] = this_is_point_primblk
-        _apply_pb_instruction_constraints(instruction)
+        instruction = _make_default_pb_instruction(this_is_point_primblk, len(index_words) or max(1, len(vertices) // 3))
     parts = [
-        "pb_instruction random block",
-        _format_pb_instruction_table(instruction),
+        "PB Instruction 3.1 words",
+        format_pb_instruction_words(instruction),
+        "",
+        "PB Instruction 3.1 field table",
+        format_pb_instruction_3_1_table(instruction),
         "",
         "PB Dump v1 field tables",
         "",
@@ -218,8 +227,9 @@ def _write_parsed_pb_dump(
     coords: List[Tuple[float, float, float]],
     index_data: List[int],
     point_mode: int,
+    instruction: Optional[PbInstruction] = None,
 ) -> None:
-    content = format_parsed_pb_dump(words, coords, index_data, point_mode)
+    content = format_parsed_pb_dump(words, coords, index_data, point_mode, instruction)
     try:
         with open(output_path, "w", encoding="utf-8") as f:
             f.write(content)
@@ -232,15 +242,27 @@ def format_parsed_pb_dump(
     coords: List[Tuple[float, float, float]],
     index_data: List[int],
     point_mode: int,
+    instruction: Optional[PbInstruction] = None,
 ) -> str:
     parts = [
         "Parsed PB Dump from memory words",
         "",
+    ]
+    if instruction is not None:
+        parts.extend([
+            "PB Instruction 3.1 words",
+            format_pb_instruction_words(instruction),
+            "",
+            "PB Instruction 3.1 field table",
+            format_pb_instruction_3_1_table(instruction),
+            "",
+        ])
+    parts.extend([
         _format_unified_table(words, coords, index_data, point_mode),
         "Original 256-bit memory dump",
         format_memory_dump(words).rstrip(),
         "",
-    ]
+    ])
     return "\n".join(parts)
 
 
@@ -453,8 +475,22 @@ def _apply_pb_instruction_constraints(instruction: PbInstructionRandom) -> None:
     instruction.primitive_values["this_is_point_primblk"] &= 0x1
 
 
-def _randomize_pb_memory(vertex_count: int, primitive_count: int, instruction: PbInstructionRandom) -> Tuple[Dict[int, int], int]:
-    return _build_template_words(vertex_count, primitive_count, instruction.primitive_values["this_is_point_primblk"])
+def _make_default_pb_instruction(this_is_point_primblk: int, primitive_count: int) -> PbInstruction:
+    primitive_count = max(1, min(primitive_count, 80))
+    return make_pb_instruction(
+        cs_point_primblk=this_is_point_primblk & 0x1,
+        cs_isp_state_size=2,
+        cs_prim_total=primitive_count - 1,
+        cs_mask_fmt=CS_MASK_FMT_FULL,
+        cs_prim_base_pres=1,
+        cs_prim_base_offset=0,
+        cs_prim_base=0,
+        visible_primitives=tuple(range(primitive_count)),
+    )
+
+
+def _randomize_pb_memory(vertex_count: int, primitive_count: int, this_is_point_primblk: int) -> Tuple[Dict[int, int], int]:
+    return _build_template_words(vertex_count, primitive_count, this_is_point_primblk)
 
 
 def _apply_pb_memory_constraints(

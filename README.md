@@ -238,6 +238,11 @@ python main.py
 
 ## 版本日志
 
+### v1.4.13 (2026-04-30)
+- 新增 PB Instruction 3.1 独立解析/反解析模块，支持 full、index、byte、bit 四种 primitive mask 格式的 32-bit Dword round-trip。
+- PB 导出报告新增 `PB Instruction 3.1 words` 和字段表，导入解析报告会在检测到 `pb_instruction[...] = 32'h...` 时同步展示解析结果。
+- 当前 `CS_PRIM_BASE` 仅作为可解析/可反解析字段保留，暂不绑定 PB memory 内部地址关系，等待后续规则补充。
+
 ### v1.4.12 (2026-04-30)
 - 修复导入 example PB 后程序未响应的问题：软件光栅化器会跳过超过安全像素预算的超大三角形 bbox，避免对数千万/十亿级像素做逐点覆盖测试。
 - PB 导入会根据导入三角形范围初始化 Clip/Scissor，便于查看大坐标场景；默认新场景 Clip/Scissor 恢复为 `0,0,800,600`，避免普通配置默认覆盖整个 signed 显示域。
