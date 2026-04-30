@@ -132,7 +132,7 @@ def pack_pb_instruction_words(
     instruction: PbInstruction,
     max_primitives: int = DEFAULT_MAX_PRIM_BLK_PRIMITIVES,
 ) -> Tuple[int, ...]:
-    _validate_instruction(instruction, max_primitives)
+    _validate_instruction(instruction, max_primitives, validate_byte_mask_offset=False)
 
     primitive_count = instruction.primitive_count
     cs_prim_base_offset = instruction.cs_prim_base_offset & 0xffff
@@ -142,6 +142,7 @@ def pack_pb_instruction_words(
         mask_words = _pack_index_mask(instruction.visible_primitives, max_primitives)
     elif instruction.cs_mask_fmt == CS_MASK_FMT_BYTE:
         cs_prim_base_offset, mask_words = _pack_byte_mask(instruction.visible_primitives, primitive_count)
+        _validate_byte_mask_offset(instruction.cs_prim_total, cs_prim_base_offset)
     elif instruction.cs_mask_fmt == CS_MASK_FMT_BIT:
         mask_words = _pack_bit_mask(instruction.visible_primitives, primitive_count)
     elif instruction.cs_mask_fmt == CS_MASK_FMT_FULL:
@@ -309,7 +310,11 @@ def _pack_bit_mask(indices: Sequence[int], primitive_count: int) -> Tuple[int, .
     return tuple(words)
 
 
-def _validate_instruction(instruction: PbInstruction, max_primitives: int) -> None:
+def _validate_instruction(
+    instruction: PbInstruction,
+    max_primitives: int,
+    validate_byte_mask_offset: bool = True,
+) -> None:
     _validate_max_primitives(max_primitives)
     _validate_width("cs_type", instruction.cs_type, 2)
     if instruction.cs_type != 0:
@@ -325,13 +330,30 @@ def _validate_instruction(instruction: PbInstruction, max_primitives: int) -> No
     _validate_width("cs_mask_fmt", instruction.cs_mask_fmt, 2)
     _validate_width("cs_prim_base_pres", instruction.cs_prim_base_pres, 1)
     _validate_width("cs_prim_base_offset", instruction.cs_prim_base_offset, 16)
-    if instruction.cs_mask_fmt == CS_MASK_FMT_BYTE and instruction.cs_prim_base_pres != 1:
-        raise ValueError("CS_PRIM_BASE_PRES must be 1 when CS_MASK_FMT is byte-based")
+    if instruction.cs_mask_fmt == CS_MASK_FMT_BYTE:
+        _validate_byte_mask_constraints(instruction, validate_byte_mask_offset)
     if instruction.cs_prim_base_pres and instruction.cs_prim_base is not None:
         _validate_width("cs_prim_base", instruction.cs_prim_base, 32)
     for primitive in instruction.visible_primitives:
         if primitive < 0 or primitive >= instruction.primitive_count or primitive >= max_primitives:
             raise ValueError("visible primitive index is out of range")
+
+
+def _validate_byte_mask_constraints(instruction: PbInstruction, validate_offset: bool) -> None:
+    if instruction.cs_prim_base_pres != 1:
+        raise ValueError("CS_PRIM_BASE_PRES must be 1 when CS_MASK_FMT is byte-based")
+    if validate_offset:
+        _validate_byte_mask_offset(instruction.cs_prim_total, instruction.cs_prim_base_offset)
+
+
+def _validate_byte_mask_offset(cs_prim_total: int, cs_prim_base_offset: int) -> None:
+    byte_mask_bits = cs_prim_base_offset & 0x3ff
+    if byte_mask_bits == 0:
+        raise ValueError("byte-based CS_PRIM_BASE_OFFSET[9:0] must contain at least one set bit")
+    valid_group_count = cs_prim_total // 8 + 1
+    valid_group_mask = (1 << valid_group_count) - 1
+    if byte_mask_bits & ~valid_group_mask:
+        raise ValueError("byte-based CS_PRIM_BASE_OFFSET sets groups beyond CS_PRIM_TOTAL")
 
 
 def _validate_width(name: str, value: int, width: int) -> None:

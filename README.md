@@ -238,6 +238,10 @@ python main.py
 
 ## 版本日志
 
+### v1.4.16 (2026-04-30)
+- 增加 PB Instruction byte mask 约束：`CS_MASK_FMT=1` 时 `CS_PRIM_BASE_PRES` 必须为 1，`CS_PRIM_BASE_OFFSET[9:0]` 至少包含一个有效 bit。
+- 根据 `CS_PRIM_TOTAL` 校验 byte mask presence bit 范围，禁止设置超出当前 primitive group 的高位。
+
 ### v1.4.15 (2026-04-30)
 - 修正 PB Instruction header 布局为 `{CS_TYPE, CS_ISP_STATE_SIZE, CS_PRIM_TOTAL, CS_MASK_FMT, CS_PRIM_BASE_PRES, CS_PRIM_BASE_OFFSET}`，字段宽度分别为 `2/4/7/2/1/16` bit。
 - `CS_TYPE` 固定为 primitive block 的 `0`，`CS_ISP_STATE_SIZE` 校验范围改为 `3..10`，`CS_PRIM_TOTAL` 校验范围改为 `0..79`。
