@@ -238,6 +238,10 @@ python main.py
 
 ## 版本日志
 
+### v1.4.14 (2026-04-30)
+- 修复导入大坐标 PB 样例后提示成功但界面未响应的问题：Top View 和 3D View 的 tile 网格、tile label、tile 坐标轴改为只遍历当前可见 tile。
+- 大 screen/clip 场景不再因为几百万个 tile label 或网格线绘制循环阻塞 repaint，保持导入后的视图交互响应。
+
 ### v1.4.13 (2026-04-30)
 - 新增 PB Instruction 3.1 独立解析/反解析模块，支持 full、index、byte、bit 四种 primitive mask 格式的 32-bit Dword round-trip。
 - PB 导出报告新增 `PB Instruction 3.1 words` 和字段表，导入解析报告会在检测到 `pb_instruction[...] = 32'h...` 时同步展示解析结果。

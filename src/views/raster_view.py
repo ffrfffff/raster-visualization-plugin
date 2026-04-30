@@ -213,12 +213,21 @@ class RasterView(QWidget):
             tw = self.config.tile_width
             th = self.config.tile_height
 
+            vis_min_x = max(so, int(math.floor((-ox) / scale)) - tw)
+            vis_min_y = max(so, int(math.floor((-oy) / scale)) - th)
+            vis_max_x = min(so + sw, int(math.ceil((self.width() - ox) / scale)) + tw)
+            vis_max_y = min(so + sh, int(math.ceil((self.height() - oy) / scale)) + th)
+            first_tile_x = max(0, (vis_min_x - so) // tw)
+            first_tile_y = max(0, (vis_min_y - so) // th)
+            last_tile_x = min(self.config.tile_count_x, (vis_max_x - so + tw - 1) // tw)
+            last_tile_y = min(self.config.tile_count_y, (vis_max_y - so + th - 1) // th)
+
             pen_grid = QPen(QColor(60, 60, 70), 1)
             painter.setPen(pen_grid)
-            for i in range(self.config.tile_count_x + 1):
+            for i in range(first_tile_x, last_tile_x + 1):
                 x = int(ox + (so + min(i * tw, sw)) * scale)
                 painter.drawLine(x, int(screen_vy), x, int(screen_vy + sh * scale))
-            for j in range(self.config.tile_count_y + 1):
+            for j in range(first_tile_y, last_tile_y + 1):
                 y = int(oy + (so + min(j * th, sh)) * scale)
                 painter.drawLine(int(screen_vx), y, int(screen_vx + sw * scale), y)
 
@@ -229,8 +238,8 @@ class RasterView(QWidget):
                 painter.setPen(QPen(QColor(90, 90, 110)))
                 fm = QFontMetrics(painter.font())
 
-                for i in range(self.config.tile_count_x):
-                    for j in range(self.config.tile_count_y):
+                for i in range(first_tile_x, last_tile_x):
+                    for j in range(first_tile_y, last_tile_y):
                         tile_cx = ox + (so + i * tw + tw / 2) * scale
                         tile_cy = oy + (so + j * th + th / 2) * scale
                         label = f"({i},{j})"

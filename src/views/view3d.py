@@ -402,18 +402,39 @@ class View3D(QWidget):
             painter.setBrush(QBrush(QColor(color[0], color[1], color[2], alpha)))
             self._draw_projected_rect(painter, px, py, 1, 1, 0)
 
+    def _visible_tile_range(self) -> Tuple[int, int, int, int]:
+        if self.config.tile_width <= 0 or self.config.tile_height <= 0:
+            return (0, 0, 0, 0)
+        if not self._is_flat_top_view():
+            max_tiles = 160
+            step_x = max(1, math.ceil(self.config.tile_count_x / max_tiles))
+            step_y = max(1, math.ceil(self.config.tile_count_y / max_tiles))
+            return (0, 0, self.config.tile_count_x // step_x, self.config.tile_count_y // step_y)
+        min_x, min_y, max_x, max_y = self._visible_screen_bounds(pad=max(self.config.tile_width, self.config.tile_height))
+        so = self.config.screen_origin
+        tw = self.config.tile_width
+        th = self.config.tile_height
+        first_tile_x = max(0, (min_x - so) // tw)
+        first_tile_y = max(0, (min_y - so) // th)
+        last_tile_x = min(self.config.tile_count_x, (max_x - so + tw - 1) // tw)
+        last_tile_y = min(self.config.tile_count_y, (max_y - so + th - 1) // th)
+        return (first_tile_x, first_tile_y, last_tile_x, last_tile_y)
+
     def _draw_tile_grid(self, painter: QPainter):
         sw = self.config.screen_width
         sh = self.config.screen_height
         so = self.config.screen_origin
         tw = self.config.tile_width
         th = self.config.tile_height
+        if tw <= 0 or th <= 0:
+            return
+        first_tile_x, first_tile_y, last_tile_x, last_tile_y = self._visible_tile_range()
 
         painter.setPen(QPen(QColor(75, 82, 105), 1))
-        for i in range(self.config.tile_count_x + 1):
+        for i in range(first_tile_x, last_tile_x + 1):
             x = so + min(i * tw, sw)
             self._draw_projected_line(painter, (x, so, 0), (x, so + sh, 0))
-        for j in range(self.config.tile_count_y + 1):
+        for j in range(first_tile_y, last_tile_y + 1):
             y = so + min(j * th, sh)
             self._draw_projected_line(painter, (so, y, 0), (so + sw, y, 0))
 
@@ -427,12 +448,13 @@ class View3D(QWidget):
         tw = self.config.tile_width
         th = self.config.tile_height
         so = self.config.screen_origin
+        first_tile_x, first_tile_y, last_tile_x, last_tile_y = self._visible_tile_range()
         painter.setFont(QFont("Consolas", max(7, min(10, int(pixel_size * 2)))))
         painter.setPen(QPen(QColor(135, 140, 165)))
         fm = QFontMetrics(painter.font())
 
-        for i in range(self.config.tile_count_x):
-            for j in range(self.config.tile_count_y):
+        for i in range(first_tile_x, last_tile_x):
+            for j in range(first_tile_y, last_tile_y):
                 sx, sy = self._project(so + i * tw + tw / 2, so + j * th + th / 2, 0)
                 label = f"({i},{j})"
                 painter.drawText(int(sx - fm.horizontalAdvance(label) / 2), int(sy + fm.height() / 3), label)
@@ -449,14 +471,15 @@ class View3D(QWidget):
         so = self.config.screen_origin
         tw = self.config.tile_width
         th = self.config.tile_height
+        first_tile_x, first_tile_y, last_tile_x, last_tile_y = self._visible_tile_range()
         painter.setFont(QFont("Consolas", 8))
         painter.setPen(QPen(QColor(150, 155, 180)))
 
-        for i in range(self.config.tile_count_x + 1):
+        for i in range(first_tile_x, last_tile_x + 1):
             x = so + min(i * tw, sw)
             sx, sy = self._project(x, so, 0)
             painter.drawText(int(sx - 10), int(sy - 5), str(x))
-        for j in range(self.config.tile_count_y + 1):
+        for j in range(first_tile_y, last_tile_y + 1):
             y = so + min(j * th, sh)
             sx, sy = self._project(so, y, 0)
             painter.drawText(int(sx - 32), int(sy + 4), str(y))
