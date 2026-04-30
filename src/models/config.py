@@ -5,6 +5,7 @@ from PyQt6.QtCore import QObject, pyqtSignal
 
 DISPLAY_COORD_MIN = -64 * 1024
 DISPLAY_COORD_MAX = 64 * 1024
+MAX_RASTERIZED_BBOX_PIXELS = 1_000_000
 
 
 @dataclass
@@ -17,10 +18,10 @@ class RasterConfig:
     subtract_screen_offset: bool = False
     depth_surface_width: int = 800
     depth_surface_height: int = 600
-    clip_region: Tuple[int, int, int, int] = (DISPLAY_COORD_MIN, DISPLAY_COORD_MIN, DISPLAY_COORD_MAX - DISPLAY_COORD_MIN, DISPLAY_COORD_MAX - DISPLAY_COORD_MIN)
+    clip_region: Tuple[int, int, int, int] = (0, 0, 800, 600)
     rt_width: int = 800
     rt_height: int = 600
-    scissor: Tuple[int, int, int, int] = (DISPLAY_COORD_MIN, DISPLAY_COORD_MIN, DISPLAY_COORD_MAX - DISPLAY_COORD_MIN, DISPLAY_COORD_MAX - DISPLAY_COORD_MIN)
+    scissor: Tuple[int, int, int, int] = (0, 0, 800, 600)
     tile_width: int = 16
     tile_height: int = 16
 

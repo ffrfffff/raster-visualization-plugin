@@ -5,7 +5,7 @@ import re
 import struct
 from typing import Dict, List, Optional, Tuple, Union
 
-from ..models.config import RasterConfig
+from ..models.config import DISPLAY_COORD_MAX, DISPLAY_COORD_MIN, RasterConfig
 from ..models.triangle import Triangle
 from .pb_rules import (
     INDEX_DATA_BITS,
@@ -108,7 +108,22 @@ def load_pb_dump(
             words = parse_memory_dump(text)
         _write_parsed_pb_dump(output_path, words, coords, index_data, point_mode)
 
-    return RasterConfig(), triangles
+    config = RasterConfig()
+    if triangles:
+        xs = [vertex[0] for triangle in triangles for vertex in triangle.vertices]
+        ys = [vertex[1] for triangle in triangles for vertex in triangle.vertices]
+        min_x = max(DISPLAY_COORD_MIN, int(min(xs)))
+        min_y = max(DISPLAY_COORD_MIN, int(min(ys)))
+        max_x = min(DISPLAY_COORD_MAX, int(max(xs)) + 1)
+        max_y = min(DISPLAY_COORD_MAX, int(max(ys)) + 1)
+        width = max(1, max_x - min_x)
+        height = max(1, max_y - min_y)
+        config.screen_width = width
+        config.screen_height = height
+        config.clip_region = (min_x, min_y, width, height)
+        config.scissor = (min_x, min_y, width, height)
+
+    return config, triangles
 
 
 def save_pb_dump(path: str, config: RasterConfig, triangles: List[Triangle]) -> None:

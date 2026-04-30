@@ -63,8 +63,8 @@ python main.py
     "subtract_screen_offset": false,
     "depth_surface_size": [800, 600],
     "render_target_size": [800, 600],
-    "clip_region": [-65536, -65536, 131072, 131072],
-    "scissor": [-65536, -65536, 131072, 131072],
+    "clip_region": [0, 0, 800, 600],
+    "scissor": [0, 0, 800, 600],
     "tile_size": [16, 16]
   },
   "triangles": [
@@ -238,8 +238,12 @@ python main.py
 
 ## 版本日志
 
+### v1.4.12 (2026-04-30)
+- 修复导入 example PB 后程序未响应的问题：软件光栅化器会跳过超过安全像素预算的超大三角形 bbox，避免对数千万/十亿级像素做逐点覆盖测试。
+- PB 导入会根据导入三角形范围初始化 Clip/Scissor，便于查看大坐标场景；默认新场景 Clip/Scissor 恢复为 `0,0,800,600`，避免普通配置默认覆盖整个 signed 显示域。
+
 ### v1.4.11 (2026-04-30)
-- 可显示/可光栅化的全局 X/Y 坐标域扩展为 `-64K..64K`，负坐标三角形不再被默认 screen rectangle 裁掉；默认 Clip/Scissor 覆盖完整 signed 显示域。
+- 可显示/可光栅化的全局 X/Y 坐标域扩展为 `-64K..64K`，负坐标三角形不再被默认 screen rectangle 裁掉；Clip/Scissor X/Y 可按需配置到 signed 显示域。
 - Top View 和 3D View 的 raster pixel 绘制改为按真实坐标稀疏绘制，避免为 `-64K..64K` 创建巨大 QImage；Go Top、hover、Depth Side View 和滚动条同步支持负坐标。
 - 配置面板与 JSON 导入支持 signed 的 Screen Offset、Clip/Scissor X/Y，Clip/Scissor 宽高最大可覆盖完整 signed 显示域。
 

@@ -1,6 +1,6 @@
 from typing import List, Tuple, Dict, Set
 import math
-from ..models.config import RasterConfig
+from ..models.config import MAX_RASTERIZED_BBOX_PIXELS, RasterConfig
 from ..models.triangle import Triangle, RasterizedTriangle
 from ..utils.geometry import (
     point_in_triangle,
@@ -63,6 +63,13 @@ class SoftwareRasterizer:
         min_y = max(min_y, screen_min_y)
         max_x = min(max_x, screen_max_x)
         max_y = min(max_y, screen_max_y)
+
+        if max_x <= min_x or max_y <= min_y:
+            return result
+
+        bbox_pixels = (max_x - min_x) * (max_y - min_y)
+        if bbox_pixels > MAX_RASTERIZED_BBOX_PIXELS:
+            return result
 
         msaa_positions = generate_msaa_sample_positions(self.config.msaa)
         msaa_count = self.config.msaa
