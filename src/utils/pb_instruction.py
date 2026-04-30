@@ -18,7 +18,6 @@ PB_INSTRUCTION_WORD_RE = re.compile(
 @dataclass(frozen=True)
 class PbInstruction:
     cs_type: int
-    cs_point_primblk: int
     cs_isp_state_size: int
     cs_prim_total: int
     cs_mask_fmt: int
@@ -45,7 +44,6 @@ class PbInstruction:
 
 def make_pb_instruction(
     *,
-    cs_point_primblk: int,
     cs_isp_state_size: int,
     cs_prim_total: int,
     cs_mask_fmt: int,
@@ -57,7 +55,6 @@ def make_pb_instruction(
 ) -> PbInstruction:
     instruction = PbInstruction(
         cs_type=0,
-        cs_point_primblk=cs_point_primblk,
         cs_isp_state_size=cs_isp_state_size,
         cs_prim_total=cs_prim_total,
         cs_mask_fmt=cs_mask_fmt,
@@ -83,8 +80,7 @@ def parse_pb_instruction_words(
 
     header = _u32(words[0])
     cs_type = (header >> 30) & 0x3
-    cs_point_primblk = (header >> 29) & 0x1
-    cs_isp_state_size = (header >> 26) & 0x7
+    cs_isp_state_size = (header >> 26) & 0xf
     cs_prim_total = (header >> 19) & 0x7f
     cs_mask_fmt = (header >> 17) & 0x3
     cs_prim_base_pres = (header >> 16) & 0x1
@@ -117,7 +113,6 @@ def parse_pb_instruction_words(
 
     instruction = PbInstruction(
         cs_type=cs_type,
-        cs_point_primblk=cs_point_primblk,
         cs_isp_state_size=cs_isp_state_size,
         cs_prim_total=cs_prim_total,
         cs_mask_fmt=cs_mask_fmt,
@@ -156,8 +151,7 @@ def pack_pb_instruction_words(
 
     header = (
         ((instruction.cs_type & 0x3) << 30)
-        | ((instruction.cs_point_primblk & 0x1) << 29)
-        | ((instruction.cs_isp_state_size & 0x7) << 26)
+        | ((instruction.cs_isp_state_size & 0xf) << 26)
         | ((instruction.cs_prim_total & 0x7f) << 19)
         | ((instruction.cs_mask_fmt & 0x3) << 17)
         | ((instruction.cs_prim_base_pres & 0x1) << 16)
@@ -205,8 +199,7 @@ def format_pb_instruction_table(instruction: PbInstruction) -> str:
     for index, word in enumerate(pack_pb_instruction_words(instruction)):
         rows.append(_table_row(f"word[{index}]", "integral", 32, word, "", indent=1))
     rows.append(_table_row("cs_type", "integral", 2, instruction.cs_type, "00b Primitive block", indent=1))
-    rows.append(_table_row("cs_point_primblk", "integral", 1, instruction.cs_point_primblk, "", indent=1))
-    rows.append(_table_row("cs_isp_state_size", "integral", 3, instruction.cs_isp_state_size, "", indent=1))
+    rows.append(_table_row("cs_isp_state_size", "integral", 4, instruction.cs_isp_state_size, "", indent=1))
     rows.append(_table_row("cs_prim_total", "integral", 7, instruction.cs_prim_total, f"primitive_count={instruction.primitive_count}", indent=1))
     rows.append(_table_row("cs_mask_fmt", "integral", 2, instruction.cs_mask_fmt, _mask_fmt_name(instruction.cs_mask_fmt), indent=1))
     rows.append(_table_row("cs_prim_base_pres", "integral", 1, instruction.cs_prim_base_pres, "", indent=1))
@@ -321,11 +314,12 @@ def _validate_instruction(instruction: PbInstruction, max_primitives: int) -> No
     _validate_width("cs_type", instruction.cs_type, 2)
     if instruction.cs_type != 0:
         raise ValueError("PB instruction CS_TYPE must be 0 for primitive block instructions")
-    _validate_width("cs_point_primblk", instruction.cs_point_primblk, 1)
-    _validate_width("cs_isp_state_size", instruction.cs_isp_state_size, 3)
-    if not 2 <= instruction.cs_isp_state_size <= 6:
-        raise ValueError("CS_ISP_STATE_SIZE must be between 2 and 6")
+    _validate_width("cs_isp_state_size", instruction.cs_isp_state_size, 4)
+    if not 3 <= instruction.cs_isp_state_size <= 10:
+        raise ValueError("CS_ISP_STATE_SIZE must be between 3 and 10")
     _validate_width("cs_prim_total", instruction.cs_prim_total, 7)
+    if instruction.cs_prim_total > 79:
+        raise ValueError("CS_PRIM_TOTAL must be between 0 and 79")
     if instruction.primitive_count > max_primitives:
         raise ValueError("CS_PRIM_TOTAL exceeds MAX_PRIM_BLK_PRIMITIVES")
     _validate_width("cs_mask_fmt", instruction.cs_mask_fmt, 2)

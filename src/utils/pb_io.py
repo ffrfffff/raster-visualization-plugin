@@ -478,8 +478,7 @@ def _apply_pb_instruction_constraints(instruction: PbInstructionRandom) -> None:
 def _make_default_pb_instruction(this_is_point_primblk: int, primitive_count: int) -> PbInstruction:
     primitive_count = max(1, min(primitive_count, 80))
     return make_pb_instruction(
-        cs_point_primblk=this_is_point_primblk & 0x1,
-        cs_isp_state_size=2,
+        cs_isp_state_size=3,
         cs_prim_total=primitive_count - 1,
         cs_mask_fmt=CS_MASK_FMT_FULL,
         cs_prim_base_pres=1,
